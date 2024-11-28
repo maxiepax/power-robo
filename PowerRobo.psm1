@@ -5,6 +5,29 @@ $Global:PvdModulePath = "C:\Users\adm-kjohansson\Documents\GitHub\power-robo"
 #Region                                            L O G G I N G                                            ###########
 
 Function LogMessage {
+    <#
+        .SYNOPSIS
+        Logs messages to console and file.
+
+        .PARAMETER message
+        The message to be showed and logged.
+
+        .PARAMETER type
+        The type of message to be logged.
+
+        .PARAMETER colour
+        Optional colour other than defaults.
+
+        .PARAMETER skipnewline
+        Dont create a new line.
+
+        .EXAMPLE
+        LogMessage -type INFO -message "Validating folder exists: SUCCESSFUL"
+
+        .NOTES
+         Author: Ken Gould
+        Github: https://github.com/feardamhan
+    #>
     Param (
         [Parameter (Mandatory = $true)] [AllowEmptyString()] [String]$message,
         [Parameter (Mandatory = $false)] [ValidateSet("INFO", "ERROR", "WARNING", "EXCEPTION","ADVISORY","NOTE","QUESTION","WAIT")] [String]$type = "INFO",
@@ -226,6 +249,11 @@ Function Start-TwoNodeClusterMenu {
                 21 {
                     if (!$headlessPassed) { Clear-Host }; Write-Host `n " $submenuTitle : $menuItem21" -Foregroundcolor Cyan; Write-Host ''
                     New-VCSADeployment -binaryPath $binaryPath -jsonPath $jsonPath -logFile $logFile
+                    anyKey
+                }
+                22 {
+                    if (!$headlessPassed) { Clear-Host }; Write-Host `n " $submenuTitle : $menuItem22" -Foregroundcolor Cyan; Write-Host ''
+                    Start-vSANWitnessDeployment -binaryPath $binaryPath -jsonPath $jsonPath
                     anyKey
                 }
                 B {
@@ -457,14 +485,14 @@ Function Test-ESXiHosts2nodeFiles {
         [Parameter (Mandatory = $true)] [Object]$binaryPath
     )
     
-    $vcsaISO = Get-ChildItem $binaryPath -Filter *VCSA* | % { $_.FullName }
+    $vcsaISO = Get-ChildItem $binaryPath -Filter *VCSA* | ForEach-Object { $_.FullName }
     if ($vcsaISO) {
         LogMessage -type INFO -message "Checking binaries folder for VCSA ISO: SUCCESSFUL"
     } else {
         LogMessage -type WARNING -message "Cloud not find VCSA ISO: FAILURE"
     }
 
-    $vcsaISO = Get-ChildItem $binaryPath -Filter *VMware-vSAN-ESA-Witness* | % { $_.FullName }
+    $vcsaISO = Get-ChildItem $binaryPath -Filter *VMware-vSAN-ESA-Witness* | ForEach-Object { $_.FullName }
     if ($vcsaISO) {
         LogMessage -type INFO -message "Checking binaries folder for ESA Witness OVA: SUCCESSFUL"
     } else {
@@ -481,7 +509,7 @@ Function New-mountVCSAIso () {
         )
 
     #locate the ESXi installable
-    $vcsaISO = Get-ChildItem $binaryPath -Filter *VCSA* | % { $_.FullName }
+    $vcsaISO = Get-ChildItem $binaryPath -Filter *VCSA* | ForEach-Object { $_.FullName }
     if ($vcsaISO) {
         LogMessage -type INFO -message "Checking binaries folder for VCSA ISO: SUCCESSFUL"
         # mount the ISO
@@ -499,11 +527,144 @@ Function New-mountVCSAIso () {
     }
 }
 
+Function Get-VMToolsStatus {
+    <#
+        .SYNOPSIS
+        Gets the VM tools status of a VM
+
+        .PARAMETER vmName
+        The Name of the VM
+
+        .EXAMPLE
+        Get-VMToolsStatus -vmName MySpecialVM
+
+        .NOTES
+        Author: Ken Gould
+        Github: https://github.com/feardamhan
+    #>
+    Param (
+        [Parameter (mandatory = $true)] [String]$vmName
+    )
+
+    $vmView = Get-View -ViewType VirtualMachine -Filter @{'Name' = $vmName }
+    $vmToolStatus = $vmView.Guest.ToolsStatus
+    Return $vmToolStatus
+}
+
 #######################################################################################################################
 #Region                                         D E P L O Y M E N T                                         ###########
 
+Function Start-vSANWitnessDeployment {
+    <#
+        .SYNOPSIS
+        Wrapper to deploy the vSAN witness.
+
+        .PARAMETER jsonPath
+        Path to the JSON folder.
+
+        .PARAMETER binaryPath
+        Path to the Binaries folder.
+
+        .EXAMPLE
+        Start-vSANWitnessDeployment jsonPath '.\json\' -binaries '.\binaries\'
+
+        .NOTES
+
+        Author : Kim Johansson
+        Github: https://github.com/maxiepax
+    #>
+    Param (
+        [Parameter (Mandatory = $true)] [Object]$binaryPath,
+        [Parameter (Mandatory = $true)] [Object]$jsonPath
+        )
+
+    $config = Get-deploymentConfig -jsonPath $jsonPath
+
+    $deploymentSpec = @{
+        'witnessHostUsername' = $config.witnesstarget.common.user
+        'witnessHostPassword' = $config.witnesstarget.common.password
+        'witnessHostDatastore' = $config.witnesstarget.common.datastore
+        'witnessHostPortGroup' = $config.witnesstarget.common.portgroup
+        'witnessVMHostname' = $config.vsanwitness.hostname
+        'witnessVMName' = $config.vsanwitness.vm_name
+        'witnessVMIP' = $config.vsanwitness.ip
+        'witnessVMNetmask' = $config.vsanwitness.netmask
+        'witnessVMGateway' = $config.vsanwitness.gateway
+        'witnessVMMgmtVLAN' = $config.vsanwitness.mgmtVlan
+        'witnessVMPassword' = $config.vsanwitness.password
+        'dnsdomain' = $config.global.dnssearch
+        'vcenterPassword' = $config.vcenter.sso_administrator_password
+    }
+
+    if ($config.witnesstarget.common.fqdn) {
+        #use FQDN instead of IP
+        $deploymentSpec.Add('witnessHost', $config.witnesstarget.common.fqdn)
+    } else {
+        $deploymentSpec.Add('witnessHost', $config.witnesstarget.common.ip)
+    }
+
+    if ($config.vsanwitness.fqdn) {
+        #use FQDN instead of IP
+        $deploymentSpec.Add('witnessVMFQDN', $config.vsanwitness.fqdn)
+    } else {
+        $deploymentSpec.Add('witnessVMFQDN', $config.vsanwitness.ip)
+    }
+
+    if ($config.vcenter.mgmt.fqdn) {
+        #use FQDN instead of IP
+        $deploymentSpec.Add('vcenter', $config.vcenter.mgmt.fqdn)
+    } else {
+        $deploymentSpec.Add('vcenter', $config.vcenter.mgmt.ip)
+    }
+
+    $dns = ""
+    if ($config.global.dns01) { $dns = $config.global.dns01 }
+    if ($config.global.dns01 -And $config.global.dns02) { $dns = "$dns,$($config.global.dns02)" }
+    $deploymentSpec.Add('dns', $dns)
+
+    $ntp = ""
+    if ($config.global.ntp01) { $ntp = $config.global.ntp01 }
+    if ($config.global.ntp01 -And $config.global.ntp02) { $ntp = "$ntp,$($config.global.ntp02)" }
+    $deploymentSpec.Add('ntp', $ntp)
+
+    if ($config.witnesstarget.vcenter.datacenter -And $config.witnesstarget.vcenter.cluster) { 
+        #Will deploy to vCenter
+        $connectionString = "vi://$($deploymentSpec.witnessHostUsername):$($deploymentSpec.witnessHostPassword)@$($deploymentSpec.witnessHost)/$($config.vsanwitness.vcenter.datacenter)/host/$($config.vsanwitness.vcenter.cluster)/"
+        $deploymentSpec.Add('connectionString', $connectionString)
+    } else {
+        #will deploy to ESXi
+        $connectionString = "vi://$($deploymentSpec.witnessHostUsername):$($deploymentSpec.witnessHostPassword)@$($deploymentSpec.witnessHost)"
+        $deploymentSpec.Add('connectionString', $connectionString)
+    }   
+
+    LogMessage -Type INFO -Message "Building Deployment Specification: SUCCESSFULL"
+
+    New-VSANWitnessDeployment -witnessProp $deploymentSpec -binaries $binaryPath
+    
+}
+
 Function New-VSANWitnessDeployment {
-   Param (
+    <#
+        .SYNOPSIS
+        Deploys a new vSAN Witness to target ESXi or vCenter
+
+        .PARAMETER witnessProp
+        Properties required by the unattended deployment.
+
+        .PARAMETER binaries
+        Path to the folder where the VCSA ISO is located.
+
+        .EXAMPLE
+        New-VSANWitnessDeployment -witnessProp $properties -binaries $binaries
+
+        .NOTES
+        Original Author: Ken Gould
+        Github: https://github.com/feardamhan
+
+        Modified by: Kim Johansson
+        Github: https://github.com/maxiepax
+    #>
+    Param (
         [Parameter (Mandatory = $true)] [Object]$witnessProp,
         [Parameter (Mandatory = $true)] [Object]$binaries
         )
@@ -522,90 +683,63 @@ Function New-VSANWitnessDeployment {
     }
     #Environment Details
 
-    $datastoreName = $witnessProp.datastoreName
-    $dns = "$($witnessProp.dns.dns01),$($witnessProp.dns.dns02)"
-    $dns1 = $witnessProp.dns.dns01
-    $dns2 = $witnessProp.dns.dns02
-    $dnsDomain = $witnessProp.dns.search
-    $ntp = "$($witnessProp.ntp.ntp01),$($witnessProp.ntp.ntpServer2)"
+    $datastoreName = $witnessProp.witnessHostDatastore
+    $dns = $witnessProp.dns
+    $dnsDomain = $witnessProp.dnsdomain
+    $ntp = $witnessProp.ntp
 
     #Appliance Details
-    $guestUser = "root"
-    $Command_Path = '/bin/python'
-    $hostname = $witnessProp.hostname
-    $witnessFqdn = $hostname + "." + $dnsDomain
-    $vmName = $witnessProp.vm_name
-    $ipAddress0 = $witnessProp.ip
-    $netmask0= $witnessProp.netmask
-    $gateway0 = $witnessProp.gateway
-    $mgmtVlan = $witnessProp.mgmtVlan
+
+    $hostname = $witnessProp.witnessVMHostname
+    $vmName = $witnessProp.witnessVMName
+    $ipAddress0 = $witnessProp.witnessVMIP
+    $netmask0= $witnessProp.witnessVMNetmask
+    $gateway0 = $witnessProp.witnessVMGateway
     $vsannetwork = "Management"
-    $verifyCommand = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --verifyOnly --noSSLVerify --acceptAllEulas --allowAllExtraConfig --diskMode=thin --powerOn --name="' + $vmName + '" --vmFolder="' + $environmentFolder + '" --net:"Management Network=' + $segmentName+ '" --net:"Secondary Network=' + $segmentName +'" --datastore="' + $datastoreName +'" --X:injectOvfEnv --prop:guestinfo.hostname="' + $hostname +'" --prop:guestinfo.ipaddress0="' + $ipAddress0 + '" --prop:guestinfo.netmask0="' + $netmask0 + '" --prop:guestinfo.gateway0="' + $gateway0 + '" --prop:guestinfo.dns="' + $dns + '" --prop:guestinfo.dnsDomain="' + $dnsDomain + '" --prop:guestinfo.ntp="' + $ntp +'" --prop:guestinfo.passwd="' + $witnessProp.hostCredentials.esxiPassword + '" --prop:guestinfo.vsannetwork="' + $vsannetwork + '" "' + $applianceOVA + '" "vi://' + $ssoUser + ':' + $ssoPassword + '@' + $mgmtvCenterFQDN + '/' + $targetDatacenter + '/host/' + $targetCluster + '/"'
-    $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowAllExtraConfig --diskMode=thin --powerOn --name="' + $vmName + '" --vmFolder="' + $environmentFolder + '" --net:"Management Network=' + $segmentName+ '" --net:"Secondary Network=' + $segmentName +'" --datastore="' + $datastoreName +'" --X:injectOvfEnv --prop:guestinfo.hostname="' + $hostname +'" --prop:guestinfo.ipaddress0="' + $ipAddress0 + '" --prop:guestinfo.netmask0="' + $netmask0 + '" --prop:guestinfo.gateway0="' + $gateway0 + '" --prop:guestinfo.dns="' + $dns + '" --prop:guestinfo.dnsDomain="' + $dnsDomain + '" --prop:guestinfo.ntp="' + $ntp +'" --prop:guestinfo.passwd="' + $witnessProp.hostCredentials.esxiPassword + '" --prop:guestinfo.vsannetwork="' + $vsannetwork + '" "' + $applianceOVA + '" "vi://' + $ssoUser + ':' + $ssoPassword + '@' + $mgmtvCenterFQDN + '/' + $targetDatacenter + '/host/' + $targetCluster + '/"'
+    $portgroup = $witnessProp.witnessHostPortGroup 
 
-
+    $verifyCommand = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --verifyOnly --noSSLVerify --acceptAllEulas --allowAllExtraConfig --diskMode=thin --powerOn --name="' + $vmName + '" --vmFolder="" --net:"Management Network=' + $portgroup + '" --net:"Secondary Network=' + $portgroup +'" --datastore="' + $datastoreName +'" --X:injectOvfEnv --prop:guestinfo.hostname="' + $hostname +'" --prop:guestinfo.ipaddress0="' + $ipAddress0 + '" --prop:guestinfo.netmask0="' + $netmask0 + '" --prop:guestinfo.gateway0="' + $gateway0 + '" --prop:guestinfo.dns="' + $dns + '" --prop:guestinfo.dnsDomain="' + $dnsDomain + '" --prop:guestinfo.ntp="' + $ntp +'" --prop:guestinfo.passwd="' + $witnessProp.witnessVMPassword + '" --prop:guestinfo.vsannetwork="' + $vsannetwork + '" "' + $applianceOVA + '" "' + $witnessProp.connectionString + '"'
+    $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowAllExtraConfig --diskMode=thin --powerOn --name="' + $vmName + '" --vmFolder="" --net:"Management Network=' + $portgroup + '" --net:"Secondary Network=' + $portgroup +'" --datastore="' + $datastoreName +'" --X:injectOvfEnv --prop:guestinfo.hostname="' + $hostname +'" --prop:guestinfo.ipaddress0="' + $ipAddress0 + '" --prop:guestinfo.netmask0="' + $netmask0 + '" --prop:guestinfo.gateway0="' + $gateway0 + '" --prop:guestinfo.dns="' + $dns + '" --prop:guestinfo.dnsDomain="' + $dnsDomain + '" --prop:guestinfo.ntp="' + $ntp +'" --prop:guestinfo.passwd="' + $witnessProp.witnessVMPassword + '" --prop:guestinfo.vsannetwork="' + $vsannetwork + '" "' + $applianceOVA + '" "' + $witnessProp.connectionString + '"'
+   
     #Deploy Appliance
-    $session = Connect-VIServer $infrastructureSettings.infrastructureVC.fqdn -user $infrastructureSettings.infrastructureVC.username -pass $infrastructureSettings.infrastructureVC.password -ErrorAction SilentlyContinue
+    Connect-VIServer -server $witnessProp.witnesshost -user $witnessProp.witnessHostUsername -pass $witnessProp.witnessHostPassword -ErrorAction SilentlyContinue | Out-Null
 
     LogMessage -Type INFO -Message "Pre-validating witness deployment"
     $verifyWitness = Invoke-Expression "& $verifyCommand"
-    If ($verifyWitness[-1] -eq "Completed successfully")
-    {
+    If ($verifyWitness[-1] -eq "Completed successfully") {   
+        LogMessage -Type INFO -Message "Pre-validation of witness deployment: SUCCESSFUL"
         $command | Out-File $logFile -encoding ASCII -append
         LogMessage -Type INFO -Message "Deploying vSAN Witness Appliance to $($witnessProp.witnesshost)"
         Invoke-Expression "& $command" | Out-File $logFile -Encoding ASCII -Append
         LogMessage -Type WAIT -Message "[$vmName] Waiting for VM Tools to start"
         Do {
-            $toolsStatus = GetVMToolsStatus -vmname $vmName
+            $toolsStatus = Get-VMToolsStatus -vmname $vmName
         } Until (($toolsStatus -eq "toolsOld") -OR ($toolsStatus -eq "toolsOk"))
-        Sleep 60
-
-        # Set Management VLAN
-        LogMessage -Type INFO -Message "[$vmName] Configuring Management VLAN"
-        $scriptCommand = '/bin/esxcli.py network vswitch standard portgroup set -p "Management Network" -v ' + $mgmtVlan
-        runGuestOpInESXiVM -vm_moref (Get-VM $vmName).ExtensionData.MoRef -guest_username $guestUser -guest_password $witnessProp.hostCredentials.esxiPassword -guest_command_path $command_path -guest_command_args $scriptCommand
-        LogMessage -Type INFO -Message "[$vmName] Ensuring SSH is Running"
-        $scriptCommand = 'vim-cmd hostsvc/start_ssh'
-        runGuestOpInESXiVM -vm_moref (Get-VM $vmName).ExtensionData.MoRef -guest_username $guestUser -guest_password $witnessProp.hostCredentials.esxiPassword -guest_command_path $command_path -guest_command_args $scriptCommand
-        $scriptCommand = 'vim-cmd hostsvc/enable_ssh'
-        runGuestOpInESXiVM -vm_moref (Get-VM $vmName).ExtensionData.MoRef -guest_username $guestUser -guest_password $witnessProp.hostCredentials.esxiPassword -guest_command_path $command_path -guest_command_args $scriptCommand
-        disconnectinfrastructureVC
+        Start-Sleep 60
+        Disconnect-VIserver $witnessProp.witnesshost -Confirm:$false
 
         LogMessage -Type WAIT -Message "[$vmName] Waiting for Management Interface to be reachable"
         Do {} Until (Test-SilentNetConnection -ComputerName $ipaddress0)
 
-        Connect-VCFvCenter -instanceObject $instanceObject
+        #Connect-VCFvCenter -instanceObject $instanceObject
+        Connect-VIServer -server $witnessProp.vcenter -user administrator@vsphere.local -Password $witnessProp.vcenterPassword | Out-Null
         LogMessage -Type INFO -Message "[$vmName] Adding Host to vCenter"
-        Add-VMHost $witnessFqdn -Location $((Get-Datacenter).name) -user $witnessProp.hostCredentials.esxiUsername -password $witnessProp.hostCredentials.esxiPassword -Force | Out-Null
+        Add-VMHost $witnessProp.witnessVMFQDN -Location $((Get-Datacenter).name) -user root -password $witnessProp.witnessVMPassword -Force | Out-Null
         LogMessage -Type WAIT -Message "Allowing vCenter Inventory to Synchronize"
-        Sleep 90
+        Start-Sleep 90
 
         #Remove VMK1
         LogMessage -Type INFO -Message "[$vmName] Removing vmk1"
-        Get-VMHost $witnessFqdn | Get-VMHostNetworkAdapter -Name vmk1 | Remove-VMHostNetworkAdapter -Confirm:$false
+        Get-VMHost $witnessProp.witnessVMFQDN | Get-VMHostNetworkAdapter -Name vmk1 | Remove-VMHostNetworkAdapter -Confirm:$false
         #Remove Virtual Switch
         LogMessage -Type INFO -Message "[$vmName] Removing secondarySwitch"
-        Get-VMHost $witnessFqdn | Get-VirtualSwitch -name "secondarySwitch" | Remove-VirtualSwitch -confirm:$false
-
-        #Form Object suitable for calling to Set-EsxiNtp Function
-        $witnessObject = New-Object -TypeName psobject
-        $witnessObject | Add-Member -notepropertyname 'esxiUsername' -notepropertyvalue $guestUser
-        $witnessObject | Add-Member -notepropertyname 'esxiPassword' -notepropertyvalue $witnessProp.hostCredentials.esxiPassword
-        $witnessObject | Add-Member -notepropertyname 'ntpServer1' -notepropertyvalue $witnessProp.ntp.ntpServer1
-        $witnessObject | Add-Member -notepropertyname 'ntpServer2' -notepropertyvalue $witnessProp.ntp.ntpServer2
-        $witnessObject | Add-Member -notepropertyname 'hostname' -notepropertyvalue $hostname
-        $witnessObject | Add-Member -notepropertyname 'mgmtIp' -notepropertyvalue $ipaddress0
-        $witnessObject | Add-Member -notepropertyname 'fqdn' -notepropertyvalue $witnessFqdn
-        Get-VMHost -name $witnessFqdn | Get-VMHostService | Where-Object {$_.label -eq "SSH"} | Start-VMHostService | Out-Null
-        $hostConnection = connectHost -hostObject $witnessObject -silent
-        Set-EsxiNtp -hostObject $witnessObject
-        disconnectHost -hostIp $witnessObject.mgmtIp
+        Get-VMHost $witnessProp.witnessVMFQDN | Get-VirtualSwitch -name "secondarySwitch" | Remove-VirtualSwitch -confirm:$false
 
         Disconnect-VIServer * -Force -Confirm:$false -WarningAction SilentlyContinue | Out-Null
     }
      else
     {
-        disconnectinfrastructureVC
+        Disconnect-VIServer -Server $witnessTarget
         LogMessage -Type ERROR -Message "Deployment pre-validation of Witness failed. Please ensure the OVA was successfully staged to binaries folder."
         anyKey
         Break
@@ -629,13 +763,13 @@ Function New-VCSADeployment () {
 
 
     $verifyTemplate = Invoke-Expression "& $verifyTemplateCommand"
-    if ($verifyTemplate|where{$_ -match "failed"}) {
+    if ($verifyTemplate| Where-Object {$_ -match "failed"}) {
             LogMessage -type INFO -message "VCSA Template verification: FAILED"
             break
     } else {
         LogMessage -type INFO -message "VCSA Template verification: SUCCESSFUL"
         $verifyPrecheck = Invoke-Expression "& $verifyPrecheckCommand"
-        if ($verifyPrecheck|where{$_ -match "failed"}) {
+        if ($verifyPrecheck| Where-Object {$_ -match "failed"}) {
             LogMessage -type INFO -message "VCSA Precheck verification: FAILED"
             break
         } else {
