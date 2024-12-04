@@ -1,11 +1,12 @@
 {
-    "hosts": {
-            "esxi01":  {
+    "hosts": [
+            {
+                "name": "esxi01",
                 "user": "root",
                 "password": "VMw@re1!",
                 "mgmt": {
                     "ip": "10.11.11.101",
-                    "fqdn": "sfo01-m01-r01-esx01.sfo.rainpole.io"
+                    "fqdn": ""
                 },
                 "vmotion": {
                     "ip": "10.11.12.101",
@@ -18,12 +19,13 @@
                     "gw": "10.11.13.1"
                 }
             },
-            "esxi02":  {
+            {
+                "name": "esxi02",
                 "user": "root",
                 "password": "VMw@re1!",
                 "mgmt": {
                     "ip": "10.11.11.102",
-                    "fqdn": "sfo01-m01-r01-esx02.sfo.rainpole.io"
+                    "fqdn": ""
                 },
                 "vmotion": {
                     "ip": "10.11.12.102",
@@ -36,26 +38,7 @@
                     "gw": "10.11.13.1"
                 }
             }
-    },
-
-    "witnesstarget": {
-        "mgmt": {
-            "esxi": {
-            },
-            "vcenter": {
-                "datacenter": "",
-                "cluster": ""
-            }
-        },
-        "common":  {
-            "ip": "10.13.11.103",
-            "fqdn":"",
-            "datastore": "datastore01",
-            "portgroup": "VM Network",
-            "user": "root",
-            "password": "VMw@re1!"
-        }
-    },
+    ],
     "global": {
         "ntp01": "10.11.10.4",
         "ntp02": "10.11.10.5",
@@ -76,11 +59,28 @@
         "vm_name": "sfo-m01-vc01",
         "datacenter": "Datcenter",
         "cluster": "vSAN-Cluster",
-        "compression": true,
-        "deduplication": false,
+        "dvswitch": "dvSwitch",
         "deployment_size": "tiny",
-        "ceip": false
-        
+        "ceip": false,
+        "hcl_json": "custom_vsan_esa_hcl_12_04_2024_11_17_55.json"
+    },
+    "witnesstarget": {
+        "mgmt": {
+            "esxi": {
+            },
+            "vcenter": {
+                "datacenter": "",
+                "cluster": ""
+            }
+        },
+        "common":  {
+            "ip": "10.13.11.103",
+            "fqdn":"",
+            "datastore": "datastore01",
+            "portgroup": "VM Network",
+            "user": "root",
+            "password": "VMw@re1!"
+        }
     },
     "vsanwitness": {
         "hostname": "vsanwitness",

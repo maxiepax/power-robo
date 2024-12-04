@@ -194,6 +194,7 @@ Function Start-TwoNodeClusterMenu {
         $headingItem03 = "Deployment"
         $menuitem21 = "Deploy VCSA"
         $menuitem22 = "Deploy witness"
+        $menuitem22 = "Join remaining hosts"
 
         $headingItem04 = "Post-Configuration"
         $menuitem31 = "Configure basic things"
@@ -221,6 +222,7 @@ Function Start-TwoNodeClusterMenu {
             Write-Host ""; Write-Host -Object " $headingItem03" -ForegroundColor Yellow
             Write-Host -Object " 21. $menuItem21" -ForegroundColor White
             Write-Host -Object " 22. $menuItem22" -ForegroundColor White
+            Write-Host -Object " 23. $menuItem23" -ForegroundColor White
 
             Write-Host ""; Write-Host -Object " $headingItem04" -ForegroundColor Yellow
             Write-Host -Object " 31. $menuItem31" -ForegroundColor White
@@ -254,6 +256,11 @@ Function Start-TwoNodeClusterMenu {
                 22 {
                     if (!$headlessPassed) { Clear-Host }; Write-Host `n " $submenuTitle : $menuItem22" -Foregroundcolor Cyan; Write-Host ''
                     Start-vSANWitnessDeployment -binaryPath $binaryPath -jsonPath $jsonPath
+                    anyKey
+                }
+                23 {
+                    if (!$headlessPassed) { Clear-Host }; Write-Host `n " $submenuTitle : $menuItem23" -Foregroundcolor Cyan; Write-Host ''
+                    Start-JoinAdditionalESXiHosts -jsonPath $jsonPath
                     anyKey
                 }
                 B {
@@ -294,9 +301,9 @@ Function Get-vSANCompatibleDrives ($esxiHost, $password) {
 }
 
 Function New-generateVCSAJson () {
-
     $isoLetter = New-mountVCSAIso($binaryPath)
     $deploymentConfig = Get-deploymentConfig($jsonPath)
+    $esxhost = $deploymentConfig.hosts | Select-Object -First 1
     
     # copy the .json example to the folder
     $vcsaOrigJson = "$($isoLetter):\vcsa-cli-installer\templates\install\vCSA_with_cluster_on_ESXi.json"
@@ -309,18 +316,17 @@ Function New-generateVCSAJson () {
     LogMessage -type INFO -message "Reading VCSA json file into memory: SUCCESSFUL"
     
     #Target ESXi 
-    $vcsaJson.new_vcsa.esxi.hostname = $deploymentConfig.hosts.esxi01.mgmt.ip
-    $vcsaJson.new_vcsa.esxi.password = $deploymentConfig.hosts.esxi01.password
+    $vcsaJson.new_vcsa.esxi.hostname = $esxhost.mgmt.ip
+    $vcsaJson.new_vcsa.esxi.password = $esxhost.password
     LogMessage -type INFO -message "Modifying target esxi settings: SUCCESSFUL"
     $vcsaJson.new_vcsa.esxi.VCSA_cluster.datacenter = $deploymentConfig.vcenter.datacenter
     $vcsaJson.new_vcsa.esxi.VCSA_cluster.cluster = $deploymentConfig.vcenter.cluster
     
     #vSAN Settings
-    $vcsaJson.new_vcsa.esxi.VCSA_cluster.compression_only = $deploymentConfig.vcenter.compression
     LogMessage -type INFO -message "Gathering Disks to be used by vSAN: SUCCESSFUL"
-    $disks = Get-vSANCompatibleDrives -esxiHost "10.11.11.101" -Password "VMw@re1!"
+    $disks = Get-vSANCompatibleDrives -esxiHost $esxhost.mgmt.ip -Password $esxhost.password
     $vcsaJson.new_vcsa.esxi.VCSA_cluster.storage_pool.single_tier = $disks.Device
-    $vcsaJson.new_vcsa.esxi.VCSA_cluster.vsan_hcl_database_path = "$($jsonPath)all.json"
+    $vcsaJson.new_vcsa.esxi.VCSA_cluster.vsan_hcl_database_path = "$($jsonPath)/$($deploymentConfig.vcenter.hcl_json)"
     LogMessage -type INFO -message "Modifying vSAN settings: SUCCESSFUL"
     
     
@@ -371,9 +377,8 @@ Function New-generateVCSAJson () {
     
     # save the modified json file
     $vcsaJson | ConvertTo-Json -depth 32| set-content "$($jsonPath)\modified_vCSA_with_cluster_on_ESXi.json"
-    LogMessage -type INFO -message "Writing new VCSA json config file to $($jsonPath)\modified_vCSA_with_cluster_on_ESXi.json: SUCCESSFUL"
-    
-    }
+    LogMessage -type INFO -message "Writing new VCSA json config file to $($jsonPath)\modified_vCSA_with_cluster_on_ESXi.json: SUCCESSFUL"    
+}
 
 #######################################################################################################################
 #Region                                       V E R I F I C A T I O N                                       ###########
@@ -410,16 +415,14 @@ Function Test-ESXiHosts2node {
     )
     $config = Get-deploymentConfig -json $jsonPath
     
-    if (Test-SilentNetConnection -computerName $config.hosts.esxi01.mgmt.ip) {
-        LogMessage -type INFO -message "Testing connectivity to $($config.hosts.esxi01.mgmt.ip): SUCCESSFUL"
-    } else {
-        LogMessage -type WARNING -message "Testing connectivity to $($config.hosts.esxi01.mgmt.ip): FAILED"
+    foreach ($esxihost in $config.hosts) {
+        if (Test-SilentNetConnection -computerName $esxihost.mgmt.ip) {
+            LogMessage -type INFO -message "Testing connectivity to $($esxihost.mgmt.ip): SUCCESSFUL"
+        } else {
+            LogMessage -type WARNING -message "Testing connectivity to $($esxihost.mgmt.ip): FAILED"
+        }
     }
-    if (Test-SilentNetConnection -computerName $config.hosts.esxi02.mgmt.ip) {
-        LogMessage -type INFO -message "Testing connectivity to $($config.hosts.esxi02.mgmt.ip): SUCCESSFUL"
-    } else {
-        LogMessage -type WARNING -message "Testing connectivity to $($config.hosts.esxi02.mgmt.ip): FAILED"
-    }
+
     if (Test-SilentNetConnection -computerName $config.witnesshost.mgmt.ip) {
         LogMessage -type INFO -message "Testing connectivity to $($config.witnesshost.mgmt.ip): SUCCESSFUL"
     } else {
@@ -427,16 +430,14 @@ Function Test-ESXiHosts2node {
     }
 
     if ($config.global.dns01) {
-        if (Test-SilentNetConnection -computerName $config.hosts.esxi01.mgmt.fqdn) {
-            LogMessage -type INFO -message "Testing connectivity to $($config.hosts.esxi01.mgmt.fqdn): SUCCESSFUL"
-        } else {
-            LogMessage -type WARNING -message "Testing connectivity to $($config.hosts.esxi01.mgmt.fqdn): FAILED"
+        foreach ($esxihost in $config.hosts) {
+            if (Test-SilentNetConnection -computerName $esxihost.mgmt.fqdn) {
+                LogMessage -type INFO -message "Testing connectivity to $($esxihost.mgmt.fqdn): SUCCESSFUL"
+            } else {
+                LogMessage -type WARNING -message "Testing connectivity to $($esxihost.mgmt.fqdn): FAILED"
+            }
         }
-        if (Test-SilentNetConnection -computerName $config.hosts.esxi02.mgmt.fqdn) {
-            LogMessage -type INFO -message "Testing connectivity to $($config.hosts.esxi02.mgmt.fqdn): SUCCESSFUL"
-        } else {
-            LogMessage -type WARNING -message "Testing connectivity to $($config.hosts.esxi02.mgmt.fqdn): FAILED"
-        }
+    
         if (Test-SilentNetConnection -computerName $config.witnesshost.mgmt.fqdn) {
             LogMessage -type INFO -message "Testing connectivity to $($config.witnesshost.mgmt.fqdn): SUCCESSFUL"
         } else {
@@ -446,32 +447,22 @@ Function Test-ESXiHosts2node {
         LogMessage -type INFO -message "No DNS configured: SKIPPING"
     }
 
-    if (Connect-VIServer -Server $config.hosts.esxi01.mgmt.ip -user root -Password $config.hosts.esxi01.password) {
-        LogMessage -type INFO -message "Testing credentials for $($config.hosts.esxi01.mgmt.ip): SUCCESSFUL"
-        $esxcli = Get-EsxCli -VMhost $config.hosts.esxi01.mgmt.ip
-        $disks = $esxcli.storage.core.device.list.Invoke() | Select-Object -Property Device, @{ n = "Size"; e = { [int]($_.Size) } } | Where-Object { $_.Size -gt 500000 }
-        if ($disks) {
-            LogMessage -type INFO -message "Checking for vSAN Claimable disks on $($config.hosts.esxi01.mgmt.ip): SUCCESSFUL"
+    foreach ($esxihost in $config.hosts) {
+        if (Connect-VIServer -Server $esxihost.mgmt.ip -user root -Password $esxihost.password) {
+            LogMessage -type INFO -message "Testing credentials for $($esxihost.mgmt.ip): SUCCESSFUL"
+            $esxcli = Get-EsxCli -VMhost $esxihost.mgmt.ip
+            $disks = $esxcli.storage.core.device.list.Invoke() | Select-Object -Property Device, @{ n = "Size"; e = { [int]($_.Size) } } | Where-Object { $_.Size -gt 500000 }
+            if ($disks) {
+                LogMessage -type INFO -message "Checking for vSAN Claimable disks on $($esxihost.mgmt.ip): SUCCESSFUL"
+            } else {
+                LogMessage -type ERROR -message "Checking for vSAN Claimable disks on $($esxihost.mgmt.ip): FAILED"
+            }  
+            disconnect-viserver -Server $esxihost.mgmt.ip -Confirm:$false
         } else {
-            LogMessage -type ERROR -message "Checking for vSAN Claimable disks on $($config.hosts.esxi01.mgmt.ip): FAILED"
-        }  
-        disconnect-viserver -Server $config.hosts.esxi01.mgmt.ip -Confirm:$false
-    } else {
-        LogMessage -type WARNING -message "Testing credentials for $($config.hosts.esxi01.mgmt.ip): FAILED"
+            LogMessage -type WARNING -message "Testing credentials for $($esxihost.mgmt.ip): FAILED"
+        }
     }
-    if (Connect-VIServer -Server $config.hosts.esxi02.mgmt.ip -user root -Password $config.hosts.esxi02.password) {
-        LogMessage -type INFO -message "Testing credentials for $($config.hosts.esxi02.mgmt.ip): SUCCESSFUL"
-        $esxcli = Get-EsxCli -VMhost $config.hosts.esxi02.mgmt.ip
-        $disks = $esxcli.storage.core.device.list.Invoke() | Select-Object -Property Device, @{ n = "Size"; e = { [int]($_.Size) } } | Where-Object { $_.Size -gt 500000 }
-        if ($disks) {
-            LogMessage -type INFO -message "Checking for vSAN Claimable disks on $($config.hosts.esxi01.mgmt.ip): SUCCESSFUL"
-        } else {
-            LogMessage -type ERROR -message "Checking for vSAN Claimable disks on $($config.hosts.esxi01.mgmt.ip): FAILED"
-        } 
-        disconnect-viserver -Server $config.hosts.esxi02.mgmt.ip -Confirm:$false
-    } else {
-        LogMessage -type WARNING -message "Testing credentials for $($config.hosts.esxi02.mgmt.ip): FAILED"
-    }
+
     if (Connect-VIServer -Server $config.witnesshost.mgmt.ip -user root -Password $config.witnesshost.password) {
         LogMessage -type INFO -message "Testing credentials for $($config.witnesshost.mgmt.ip): SUCCESSFUL"
         disconnect-viserver -Server $config.witnesshost.mgmt.ip -Confirm:$false
@@ -637,7 +628,7 @@ Function Start-vSANWitnessDeployment {
         $deploymentSpec.Add('connectionString', $connectionString)
     }   
 
-    LogMessage -Type INFO -Message "Building Deployment Specification: SUCCESSFULL"
+    LogMessage -Type NOTE -Message "Building Deployment Specification: SUCCESSFULL"
 
     New-VSANWitnessDeployment -witnessProp $deploymentSpec -binaries $binaryPath
     
@@ -734,8 +725,9 @@ Function New-VSANWitnessDeployment {
         #Remove Virtual Switch
         LogMessage -Type INFO -Message "[$vmName] Removing secondarySwitch"
         Get-VMHost $witnessProp.witnessVMFQDN | Get-VirtualSwitch -name "secondarySwitch" | Remove-VirtualSwitch -confirm:$false
-
+    
         Disconnect-VIServer * -Force -Confirm:$false -WarningAction SilentlyContinue | Out-Null
+        LogMessage -Type NOTE -Message "Deploying vSAN witness: SUCCESSFUL"
     }
      else
     {
@@ -765,12 +757,14 @@ Function New-VCSADeployment () {
     $verifyTemplate = Invoke-Expression "& $verifyTemplateCommand"
     if ($verifyTemplate| Where-Object {$_ -match "failed"}) {
             LogMessage -type INFO -message "VCSA Template verification: FAILED"
+            LogMessage -type INFO -message "DEBUG: $($verifyTemplateCommand)"
             break
     } else {
         LogMessage -type INFO -message "VCSA Template verification: SUCCESSFUL"
         $verifyPrecheck = Invoke-Expression "& $verifyPrecheckCommand"
         if ($verifyPrecheck| Where-Object {$_ -match "failed"}) {
             LogMessage -type INFO -message "VCSA Precheck verification: FAILED"
+            LogMessage -type INFO -message "DEBUG: $($verifyPrecheckCommand)"
             break
         } else {
             LogMessage -type INFO -message "VCSA Precheck verification: SUCCESSFUL"
@@ -778,4 +772,85 @@ Function New-VCSADeployment () {
             Invoke-Expression "& $deployCommand" | Out-File $logFile -Encoding ASCII -Append
         }
     }      
+}
+
+#######################################################################################################################
+#Region                                   C O N F I G U R A T I O N                                         ###########
+
+Function Start-JoinAdditionalESXiHosts {
+    Param (
+        [Parameter (Mandatory = $true)] [Object]$jsonPath
+        )
+        
+    $config = Get-deploymentConfig -jsonPath $jsonPath
+
+    Connect-VIServer -server $config.vcenter.mgmt.ip -user administrator@vsphere.local -pass $config.vcenter.sso_administrator_password -ErrorAction SilentlyContinue | Out-Null
+    foreach ($esxihost in $config.hosts) {
+        if ($esxihost.mgmt.fqdn) {
+            if (Get-VMHost -Name $esxihost.mgmt.fqdn) {
+                LogMessage -type INFO -message "Host $($esxihost.mgmt.fqdn) already added to cluster: SUCCESSFUL"
+            } else { 
+                Add-VMHost -Name $esxihost.mgmt.fqdn -Location $config.vcenter.cluster -User $esxihost.user -Password $esxihost.password -Force
+                LogMessage -type INFO -message "Host $($esxihost.mgmt.fqdn) added to cluster: SUCCESSFUL"
+            }
+        } else {
+            if (Get-VMHost -Name $esxihost.mgmt.ip) {
+                LogMessage -type INFO -message "Host $($esxihost.mgmt.ip) already added to cluster: SUCCESSFUL"
+            } else { 
+                Add-VMHost -Name $esxihost.mgmt.ip -Location $config.vcenter.cluster -User $esxihost.user -Password $esxihost.password -Force
+                LogMessage -type INFO -message "Host $($esxihost.mgmt.ip) added to cluster: SUCCESSFUL"
+            }
+        }
+    }
+    Disconnect-VIServer -server $config.vcenter.mgmt.ip -Confirm:$false
+}
+
+Function Start-CreatevDS {
+    Param (
+        [Parameter (Mandatory = $true)] [Object]$jsonPath
+        )
+        
+    $config = Get-deploymentConfig -jsonPath $jsonPath
+
+    if ($config.vcenter.mgmt.fqdn) {
+        Connect-VIServer -server $config.vcenter.mgmt.fqdn -user administrator@vsphere.local -pass $config.vcenter.sso_administrator_password -ErrorAction SilentlyContinue | Out-Null
+    } else {
+        Connect-VIServer -server $config.vcenter.mgmt.ip -user administrator@vsphere.local -pass $config.vcenter.sso_administrator_password -ErrorAction SilentlyContinue | Out-Null
+    }
+    
+    $datacenter = Get-Datacenter -Name $config.vcenter.datacenter
+    $hosts = Get-Cluster -Name $config.vcenter.cluster | Get-VMHost
+    
+    $dvs = New-VDSwitch -Name $config.vcenter.dvswitch -Location $datacenter
+    $dvsnic = $hosts | Get-VMHostNetworkAdapter -Name "vmnic1"
+    Add-VDSwitchVMHost -VDSwitch $dvs -VMHost $hosts
+    Add-VDSwitchPhysicalNetworkAdapter -VMHostNetworkAdapter $dvsnic -DistributedSwitch $dvs -Confirm:$false
+
+    Disconnect-VIServer -server $config.vcenter.mgmt.ip -Confirm:$false
+}
+
+Function Start-CreatevCenterConfigProfile {
+    Param (
+        [Parameter (Mandatory = $true)] [Object]$jsonPath
+        )
+        
+    $config = Get-deploymentConfig -jsonPath $jsonPath
+    $refHostJson = $config.hosts | Select-Object -First 1
+
+    if ($config.vcenter.mgmt.fqdn) {
+        Connect-VIServer -server $config.vcenter.mgmt.fqdn -user administrator@vsphere.local -pass $config.vcenter.sso_administrator_password -ErrorAction SilentlyContinue | Out-Null
+    } else {
+        Connect-VIServer -server $config.vcenter.mgmt.ip -user administrator@vsphere.local -pass $config.vcenter.sso_administrator_password -ErrorAction SilentlyContinue | Out-Null
+    }
+
+    if ($refHostJson.mgmt.fqdn) {
+        $server = $refHostJson.mgmt.fqdn
+    } else {
+        $server = $refHostJson.mgmt.ip
+    }
+
+    $refHost = Get-VMHost -Name $server
+    Write-Output $refHost
+
+    Disconnect-VIServer -server $config.vcenter.mgmt.ip -Confirm:$false
 }
