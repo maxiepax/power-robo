@@ -194,11 +194,12 @@ Function Start-TwoNodeClusterMenu {
         $headingItem03 = "Deployment"
         $menuitem21 = "Deploy VCSA"
         $menuitem22 = "Deploy vSAN Witness"
-        $menuitem23 = "Join remaining hosts to VCSA"
-
+        
         $headingItem04 = "Post-Configuration"
-        $menuitem31 = "Configure basic things"
-        $menuitem32 = "Setup vSAN"
+        $menuitem31 = "Join remaining hosts to VCSA"
+        $menuitem32 = "Create Distributed vSwitch"
+        $menuitem33 = "Configure ESXi hosts"
+        $menuitem34 = "Setup vSAN"
 
         Do {
             if (!$headlessPassed) { Clear-Host }
@@ -222,11 +223,12 @@ Function Start-TwoNodeClusterMenu {
             Write-Host ""; Write-Host -Object " $headingItem03" -ForegroundColor Yellow
             Write-Host -Object " 21. $menuItem21" -ForegroundColor White
             Write-Host -Object " 22. $menuItem22" -ForegroundColor White
-            Write-Host -Object " 23. $menuItem23" -ForegroundColor White
 
             Write-Host ""; Write-Host -Object " $headingItem04" -ForegroundColor Yellow
             Write-Host -Object " 31. $menuItem31" -ForegroundColor White
             Write-Host -Object " 32. $menuItem32" -ForegroundColor White
+            Write-Host -Object " 33. $menuItem33" -ForegroundColor White
+            Write-Host -Object " 34. $menuItem34" -ForegroundColor White
 
             Write-Host -Object ''
             $menuInput = if ($clioptions) { Get-NextSolutionOption } else { Read-Host -Prompt ' Select Option (or B to go Back) to Return to Previous Menu' }
@@ -258,9 +260,24 @@ Function Start-TwoNodeClusterMenu {
                     Start-vSANWitnessDeployment -binaryPath $binaryPath -jsonPath $jsonPath
                     anyKey
                 }
-                23 {
-                    if (!$headlessPassed) { Clear-Host }; Write-Host `n " $submenuTitle : $menuItem23" -Foregroundcolor Cyan; Write-Host ''
+                31 {
+                    if (!$headlessPassed) { Clear-Host }; Write-Host `n " $submenuTitle : $menuItem31" -Foregroundcolor Cyan; Write-Host ''
                     Start-JoinAdditionalESXiHosts -jsonPath $jsonPath
+                    anyKey
+                }
+                32 {
+                    if (!$headlessPassed) { Clear-Host }; Write-Host `n " $submenuTitle : $menuItem31" -Foregroundcolor Cyan; Write-Host ''
+                    Start-CreatevDSdelvSS -jsonPath $jsonPath
+                    anyKey
+                }
+                33 {
+                    if (!$headlessPassed) { Clear-Host }; Write-Host `n " $submenuTitle : $menuItem31" -Foregroundcolor Cyan; Write-Host ''
+                    Start-ConfigureEsxiHosts -jsonPath $jsonPath
+                    anyKey
+                }
+                34 {
+                    if (!$headlessPassed) { Clear-Host }; Write-Host `n " $submenuTitle : $menuItem31" -Foregroundcolor Cyan; Write-Host ''
+                    Start-ConfigurevSAN -jsonPath $jsonPath
                     anyKey
                 }
                 B {
@@ -288,7 +305,11 @@ Function Get-deploymentConfig ($jsonPath) {
     }
 }
 
-Function Get-vSANCompatibleDrives ($esxiHost, $password) {
+Function Get-vSANCompatibleDrives {
+    Param (
+        [Parameter (Mandatory = $true)] [String]$esxiHost,
+        [Parameter (Mandatory = $true)] [String]$password
+    )
     $Null = @(
         Connect-VIServer -Server $esxiHost -user root -Password $password
         LogMessage -type INFO -message "Connecting to ESXi host $($esxiHost): SUCCESSFUL"
@@ -954,6 +975,12 @@ Function Start-ConfigureEsxiHosts {
     )
     $config = Get-deploymentConfig -jsonPath $jsonPath
     
+    if ($config.vcenter.mgmt.fqdn) {
+        Connect-VIServer -server $config.vcenter.mgmt.fqdn -user administrator@vsphere.local -pass $config.vcenter.sso_administrator_password -ErrorAction SilentlyContinue | Out-Null
+    } else {
+        Connect-VIServer -server $config.vcenter.mgmt.ip -user administrator@vsphere.local -pass $config.vcenter.sso_administrator_password -ErrorAction SilentlyContinue | Out-Null
+    }
+
     foreach ($esxihost in $config.hosts) {  
         $esx = Get-VMhost -Name $esxihost.mgmt.ip
         $switch = Get-VirtualSwitch -VMhost $esx -Name $config.vcenter.dvswitch.name
@@ -972,30 +999,70 @@ Function Start-ConfigureEsxiHosts {
             LogMessage -type INFO -message "[$($esx.Name)] Adding vSAN interface with ip $($esxhost.vsan.ip) and netmask $($esxhost.vsan.netmask) with mtu $($esxhost.vsan.mtu): SUCCESSFUL"
         }
 
+        Get-VMHost -Name $esx | Get-EsxCli -v2 | ForEach-Object {$_.vsan.network.ip.add.Invoke(@{traffictype='witness';interfacename='vmk0'})}
+        LogMessage -type INFO -message "[$($esx.Name)] Adding Witness Traffic Separation to interface vmk0: SUCCESSFUL"
+
         if($config.global.dns01) {
-            Get-VMHostNetwork -VMHost $esx | Set-VMHostNetwork -DomainName $config.global.dnssearch -DNSAddress $config.global.dns01 , $config.global.dns02 -Confirm:$false
-            LogMessage -type INFO -message "[$($esx.Name)] Configuring DNS settings to primary dns $($config.global.dns01), secondary dns $($config.global.dns02), and search $($config.global.dnssearch): SUCCESSFUL"
+            if(((Get-VMhost -Name 10.11.11.101 | ForEach-Object { $_ | Select-Object Name, @{N="DNSAddress";E={($_ | Get-VMhostNetwork).DNSAddress -join "," }} }).DNSAddress) -eq "$($config.global.dns01),$($config.global.dns02)"){
+                LogMessage -type WARNING -message "[$($esx.Name)] DNS already configured: SKIPPING"
+            } else {
+                Get-VMHostNetwork -VMHost $esx | Set-VMHostNetwork -DomainName $config.global.dnssearch -DNSAddress $config.global.dns01 , $config.global.dns02 -Confirm:$false
+                LogMessage -type INFO -message "[$($esx.Name)] Configuring DNS settings to primary dns $($config.global.dns01), secondary dns $($config.global.dns02), and search $($config.global.dnssearch): SUCCESSFUL"
+            }
         }
 
         if($config.global.ntp01) {
-            Add-VMHostNTPServer -NtpServer $config.global.ntp01 , $config.global.ntp02 -VMHost $esx -Confirm:$false
-            LogMessage -type INFO -message "[$($esx.Name)] Configuring NTP settings to primary ntp $($config.global.dns01), secondary ntp $($config.global.dns02): SUCCESSFUL"
-            Get-VMHost -name $esx | Get-VmHostService | Where-Object {$_.key -eq "ntpd"} | Set-VMHostService -policy "on" | Out-Null
-            LogMessage -type INFO -message "[$($esx.Name)] Enabling NTP Service: SUCCESSFUL"
-            Get-VMHostFirewallException -VMHost $esx | Where-Object {$_.Name -eq "NTP client"} | Set-VMHostFirewallException -Enabled:$true | Out-Null
-            LogMessage -type INFO -message "[$($esx.Name)] Allowing NTP Traffic through firewall: SUCCESSFUL"
-            Get-VMHostService -VMHost $esx | Where-Object {$_.Key -eq "ntpd"} | Restart-VMHostService -Confirm:$false | Out-Null
-            LogMessage -type INFO -message "[$($esx.Name)] Restarting NTP Service: SUCCESSFUL"
+            if(Get-VMHost -Name $esx  | Get-VMHostNtpServer | Select-String -Pattern $config.global.ntp01) {
+                LogMessage -type WARNING -message "[$($esx.Name)] NTP already configured: SKIPPING"
+            } else {
+                Add-VMHostNTPServer -NtpServer $config.global.ntp01 , $config.global.ntp02 -VMHost $esx -Confirm:$false
+                LogMessage -type INFO -message "[$($esx.Name)] Configuring NTP settings to primary ntp $($config.global.dns01), secondary ntp $($config.global.dns02): SUCCESSFUL"
+                Get-VMHost -name $esx | Get-VmHostService | Where-Object {$_.key -eq "ntpd"} | Set-VMHostService -policy "on" | Out-Null
+                LogMessage -type INFO -message "[$($esx.Name)] Enabling NTP Service: SUCCESSFUL"
+                Get-VMHostFirewallException -VMHost $esx | Where-Object {$_.Name -eq "NTP client"} | Set-VMHostFirewallException -Enabled:$true | Out-Null
+                LogMessage -type INFO -message "[$($esx.Name)] Allowing NTP Traffic through firewall: SUCCESSFUL"
+                Get-VMHostService -VMHost $esx | Where-Object {$_.Key -eq "ntpd"} | Restart-VMHostService -Confirm:$false | Out-Null
+                LogMessage -type INFO -message "[$($esx.Name)] Restarting NTP Service: SUCCESSFUL"
+            }
         }
 
         if($config.global.syslog){
-            $esx | Get-AdvancedSetting -Name Syslog.global.logHost | Set-AdvancedSetting -Value $config.global.syslog -Confirm:$false | Out-Null
-            LogMessage -type INFO -message "[$($esx.Name)] Configuring syslog to $($config.global.syslog): SUCCESSFUL"
-            $esxcli = Get-EsxCli -VMHost $esx
-            $esxcli.system.syslog.reload()
-            LogMessage -type INFO -message "[$($esx.Name)] reloading syslog: SUCCESSFUL"
+            if (((Get-VMHostSysLogServer -VMHost $esx) | Select-Object *,@{N='syslog';E={$_.Host,$_.Port -join ':'}}).syslog -eq $config.global.syslog) {
+                LogMessage -type WARNING -message "[$($esx.Name)] Syslog already configured: SKIPPING"
+            } else {
+                $esx | Get-AdvancedSetting -Name Syslog.global.logHost | Set-AdvancedSetting -Value $config.global.syslog -Confirm:$false | Out-Null
+                LogMessage -type INFO -message "[$($esx.Name)] Configuring syslog to $($config.global.syslog): SUCCESSFUL"
+                $esxcli = Get-EsxCli -VMHost $esx
+                $esxcli.system.syslog.reload()
+                LogMessage -type INFO -message "[$($esx.Name)] reloading syslog: SUCCESSFUL"
+            }
         }
-    }  
+    }
+    Disconnect-VIServer -server $config.vcenter.mgmt.ip -Confirm:$false  
+}
+
+Function Start-ConfigureTwoNodevSANwithWitness {
+    Param (
+        [Parameter (Mandatory = $true)] [Object]$jsonPath
+    )
+    $config = Get-deploymentConfig -jsonPath $jsonPath
+    
+    $cluster = Get-Cluster -Name $config.vcenter.cluster
+    if ($cluster.ExtensionData.HciConfig.WorkflowState -eq "in_progress")
+    {
+        LogMessage -type INFO -message "[$($config.vcenter.cluster)] Disabling Quickstart"
+        $Cluster.ExtensionData.AbandonHciWorkflow()
+    }
+
+    $disks = (Get-vSANCompatibleDrives -esxihost 10.11.11.102 -password VMw@re1! | Select-Object -expand Device) -join '","'
+    $disks = '"'+$disks+'"'
+    #Add-VsanStoragePoolDisk -VMHost (Get-VMHost $config.hosts[1].mgmt.ip) -VsanStoragePoolDiskType "singleTier" -DiskCanonicalName ($disks)
+
+    $witness = Get-VMhost -name $config.vsanwitness.ip
+    $cluster = Get-Cluster -Name $config.vcenter.cluster
+    $primary_fd = New-VsanFaultDomain -Name 'Preferred' -VMHost $config.hosts[0].mgmt.ip
+    $secondary_fd = New-VsanFaultDomain -Name 'Secondary' -VMHost $config.hosts[1].mgmt.ip
+    Set-VsanClusterConfiguration -Configuration $cluster -StretchedClusterEnabled $true -PreferredFaultDomain $primary_fd -WitnessHost $witness -PerformanceServiceEnabled:$true -Confirm:$false | Out-Null 
 }
 
 Function Start-CreatevSpherConfigProfile {
@@ -1050,10 +1117,5 @@ Function Start-CreatevSpherConfigProfile {
     $json = $config.config | ConvertFrom-Json
     $config.config | Out-File "$($jsonPath)\cluster-01-config.json"
 
-    $config.
-
-
     Disconnect-VIServer -server $config.vcenter.mgmt.ip -Confirm:$false
 }
-
-Get-VMHost -Name "10.11.11.101" | Get-VMHostNetworkAdapter -VMKernel | Where-Object {$_.vMotionEnabled}
