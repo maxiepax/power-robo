@@ -193,8 +193,8 @@ Function Start-TwoNodeClusterMenu {
 
         $headingItem03 = "Deployment"
         $menuitem21 = "Deploy VCSA"
-        $menuitem22 = "Deploy witness"
-        $menuitem22 = "Join remaining hosts"
+        $menuitem22 = "Deploy vSAN Witness"
+        $menuitem23 = "Join remaining hosts to VCSA"
 
         $headingItem04 = "Post-Configuration"
         $menuitem31 = "Configure basic things"
@@ -423,52 +423,89 @@ Function Test-ESXiHosts2node {
         }
     }
 
-    if (Test-SilentNetConnection -computerName $config.witnesshost.mgmt.ip) {
-        LogMessage -type INFO -message "Testing connectivity to $($config.witnesshost.mgmt.ip): SUCCESSFUL"
+    if (Test-SilentNetConnection -computerName $config.witnesstarget.common.ip) {
+        LogMessage -type INFO -message "Testing connectivity to $($config.witnesstarget.common.ip): SUCCESSFUL"
     } else {
-        LogMessage -type WARNING -message "Testing connectivity to $($config.witnesshost.mgmt.ip): FAILED"
+        LogMessage -type WARNING -message "Testing connectivity to $($config.witnesstarget.common.ip): FAILED"
     }
 
     if ($config.global.dns01) {
         foreach ($esxihost in $config.hosts) {
-            if (Test-SilentNetConnection -computerName $esxihost.mgmt.fqdn) {
-                LogMessage -type INFO -message "Testing connectivity to $($esxihost.mgmt.fqdn): SUCCESSFUL"
+            if ($esxihost.mgmt.fqdn) {
+                if (Test-SilentNetConnection -computerName $esxihost.mgmt.fqdn) {
+                    LogMessage -type INFO -message "Testing connectivity to $($esxihost.mgmt.fqdn): SUCCESSFUL"
+                } else {
+                    LogMessage -type WARNING -message "Testing connectivity to $($esxihost.mgmt.fqdn): FAILED"
+                }
             } else {
-                LogMessage -type WARNING -message "Testing connectivity to $($esxihost.mgmt.fqdn): FAILED"
+                LogMessage -type WARNING -message "Missing FQDN for $($esxihost.mgmt.ip): FAILED"
             }
         }
     
-        if (Test-SilentNetConnection -computerName $config.witnesshost.mgmt.fqdn) {
-            LogMessage -type INFO -message "Testing connectivity to $($config.witnesshost.mgmt.fqdn): SUCCESSFUL"
+        if ($config.witnesstarget.mgmt.fqdn) {
+            if (Test-SilentNetConnection -computerName $config.witnesstarget.mgmt.fqdn) {
+                LogMessage -type INFO -message "Testing connectivity to $($config.witnesstarget.common.fqdn): SUCCESSFUL"
+            } else {
+                LogMessage -type WARNING -message "Testing connectivity to $($config.witnesstarget.common.fqdn): FAILED"
+            }
         } else {
-            LogMessage -type WARNING -message "Testing connectivity to $($config.witnesshost.mgmt.fqdn): FAILED"
+            LogMessage -type WARNING -message "missing FQDN for $($config.witnesstarget.common.ip): FAILED"
         }
+
     } else {
         LogMessage -type INFO -message "No DNS configured: SKIPPING"
     }
 
     foreach ($esxihost in $config.hosts) {
         if (Connect-VIServer -Server $esxihost.mgmt.ip -user root -Password $esxihost.password) {
-            LogMessage -type INFO -message "Testing credentials for $($esxihost.mgmt.ip): SUCCESSFUL"
+            LogMessage -type INFO -message "[$($esxihost.mgmt.ip)] Testing credentials: SUCCESSFUL"
             $esxcli = Get-EsxCli -VMhost $esxihost.mgmt.ip
             $disks = $esxcli.storage.core.device.list.Invoke() | Select-Object -Property Device, @{ n = "Size"; e = { [int]($_.Size) } } | Where-Object { $_.Size -gt 500000 }
             if ($disks) {
-                LogMessage -type INFO -message "Checking for vSAN Claimable disks on $($esxihost.mgmt.ip): SUCCESSFUL"
+                LogMessage -type INFO -message "[$($esxihost.mgmt.ip)] Checking for vSAN Claimable disks: SUCCESSFUL"
+                foreach ($disk in $disks) {
+                    LogMessage -type INFO -message "[$($esxihost.mgmt.ip)] Found vSAN eligeable disk $($disk.device) with size $($disk.size)mb: SUCCESSFUL"
+                }
             } else {
-                LogMessage -type ERROR -message "Checking for vSAN Claimable disks on $($esxihost.mgmt.ip): FAILED"
+                LogMessage -type ERROR -message "[$($esxihost.mgmt.ip)] Checking for vSAN Claimable disks: FAILED"
             }  
-            disconnect-viserver -Server $esxihost.mgmt.ip -Confirm:$false
+            Disconnect-viserver -Server $esxihost.mgmt.ip -Confirm:$false
         } else {
-            LogMessage -type WARNING -message "Testing credentials for $($esxihost.mgmt.ip): FAILED"
+            LogMessage -type WARNING -message "[$($esxihost.mgmt.ip)] Testing credentials: FAILED"
+            Disconnect-viserver -Server $esxihost.mgmt.i -Confirm:$false
+
         }
     }
 
-    if (Connect-VIServer -Server $config.witnesshost.mgmt.ip -user root -Password $config.witnesshost.password) {
-        LogMessage -type INFO -message "Testing credentials for $($config.witnesshost.mgmt.ip): SUCCESSFUL"
-        disconnect-viserver -Server $config.witnesshost.mgmt.ip -Confirm:$false
+    if (Connect-VIServer -Server $config.witnesstarget.common.ip -user root -Password $config.witnesstarget.common.password) {
+        LogMessage -type INFO -message "[$($config.witnesstarget.common.ip)] Testing credentials: SUCCESSFUL"
+        if (Get-Datastore -Name $config.witnesstarget.common.datastore) {
+            LogMessage -type INFO -message "[$($config.witnesstarget.common.ip)] Checking if datastore $($config.witnesstarget.common.datastore) exists: SUCCESSFUL"
+        } else {
+            LogMessage -type WARNING -message "[$($config.witnesstarget.common.ip)] Checking if datastore $($config.witnesstarget.common.datastore) exists: FAILED"
+        }
+
+        if (Get-VirtualPortGroup -Name $config.witnesstarget.common.portgroup_name) {
+            LogMessage -type INFO -message "[$($config.witnesstarget.common.ip)] Checking if portgroup $($config.witnesstarget.common.portgroup_name) exists: SUCCESSFUL"
+            if ((Get-VirtualPortGroup -Name $config.witnesstarget.common.portgroup_name).VLanId -eq $config.witnesstarget.common.portgroup_vlan) {
+                LogMessage -type INFO -message "[$($config.witnesstarget.common.ip)] Checking if portgroup has the vlan $($config.witnesstarget.common.portgroup_vlan): SUCCESSFUL"
+            } else {
+            LogMessage -type INFO -message "[$($config.witnesstarget.common.ip)] Checking if portgroup has the vlan $($config.witnesstarget.common.portgroup_vlan): SUCCESSFUL"
+            }
+        } else {
+            LogMessage -type WARNING -message "[$($config.witnesstarget.common.ip)] Checking if datastore $($config.witnesstarget.common.portgroup_name) exists: FAILED"
+        }    
     } else {
-        LogMessage -type WARNING -message "Testing credentials for $($config.witnesshost.mgmt.ip): FAILED"
+        LogMessage -type WARNING -message "[$($config.witnesstarget.common.ip)] Testing credentials: FAILED"
+        Disconnect-viserver -Server $config.witnesstarget.common.ip -Confirm:$false
     }
+
+
+
+
+
+
+
 }
 
 Function Test-ESXiHosts2nodeFiles {
@@ -575,13 +612,12 @@ Function Start-vSANWitnessDeployment {
         'witnessHostUsername' = $config.witnesstarget.common.user
         'witnessHostPassword' = $config.witnesstarget.common.password
         'witnessHostDatastore' = $config.witnesstarget.common.datastore
-        'witnessHostPortGroup' = $config.witnesstarget.common.portgroup
+        'witnessHostPortGroup' = $config.witnesstarget.common.portgroup_name
         'witnessVMHostname' = $config.vsanwitness.hostname
         'witnessVMName' = $config.vsanwitness.vm_name
         'witnessVMIP' = $config.vsanwitness.ip
         'witnessVMNetmask' = $config.vsanwitness.netmask
         'witnessVMGateway' = $config.vsanwitness.gateway
-        'witnessVMMgmtVLAN' = $config.vsanwitness.mgmtVlan
         'witnessVMPassword' = $config.vsanwitness.password
         'dnsdomain' = $config.global.dnssearch
         'vcenterPassword' = $config.vcenter.sso_administrator_password
@@ -589,9 +625,9 @@ Function Start-vSANWitnessDeployment {
 
     if ($config.witnesstarget.common.fqdn) {
         #use FQDN instead of IP
-        $deploymentSpec.Add('witnessHost', $config.witnesstarget.common.fqdn)
+        $deploymentSpec.Add('witnessTarget', $config.witnesstarget.common.fqdn)
     } else {
-        $deploymentSpec.Add('witnessHost', $config.witnesstarget.common.ip)
+        $deploymentSpec.Add('witnessTarget', $config.witnesstarget.common.ip)
     }
 
     if ($config.vsanwitness.fqdn) {
@@ -620,11 +656,11 @@ Function Start-vSANWitnessDeployment {
 
     if ($config.witnesstarget.vcenter.datacenter -And $config.witnesstarget.vcenter.cluster) { 
         #Will deploy to vCenter
-        $connectionString = "vi://$($deploymentSpec.witnessHostUsername):$($deploymentSpec.witnessHostPassword)@$($deploymentSpec.witnessHost)/$($config.vsanwitness.vcenter.datacenter)/host/$($config.vsanwitness.vcenter.cluster)/"
+        $connectionString = "vi://$($deploymentSpec.witnessHostUsername):$($deploymentSpec.witnessHostPassword)@$($deploymentSpec.witnesstarget)/$($config.vsanwitness.vcenter.datacenter)/host/$($config.vsanwitness.vcenter.cluster)/"
         $deploymentSpec.Add('connectionString', $connectionString)
     } else {
         #will deploy to ESXi
-        $connectionString = "vi://$($deploymentSpec.witnessHostUsername):$($deploymentSpec.witnessHostPassword)@$($deploymentSpec.witnessHost)"
+        $connectionString = "vi://$($deploymentSpec.witnessHostUsername):$($deploymentSpec.witnessHostPassword)@$($deploymentSpec.witnesstarget)"
         $deploymentSpec.Add('connectionString', $connectionString)
     }   
 
@@ -693,26 +729,25 @@ Function New-VSANWitnessDeployment {
     $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowAllExtraConfig --diskMode=thin --powerOn --name="' + $vmName + '" --vmFolder="" --net:"Management Network=' + $portgroup + '" --net:"Secondary Network=' + $portgroup +'" --datastore="' + $datastoreName +'" --X:injectOvfEnv --prop:guestinfo.hostname="' + $hostname +'" --prop:guestinfo.ipaddress0="' + $ipAddress0 + '" --prop:guestinfo.netmask0="' + $netmask0 + '" --prop:guestinfo.gateway0="' + $gateway0 + '" --prop:guestinfo.dns="' + $dns + '" --prop:guestinfo.dnsDomain="' + $dnsDomain + '" --prop:guestinfo.ntp="' + $ntp +'" --prop:guestinfo.passwd="' + $witnessProp.witnessVMPassword + '" --prop:guestinfo.vsannetwork="' + $vsannetwork + '" "' + $applianceOVA + '" "' + $witnessProp.connectionString + '"'
    
     #Deploy Appliance
-    Connect-VIServer -server $witnessProp.witnesshost -user $witnessProp.witnessHostUsername -pass $witnessProp.witnessHostPassword -ErrorAction SilentlyContinue | Out-Null
+    Connect-VIServer -server $witnessProp.witnessTarget -user $witnessProp.witnessHostUsername -pass $witnessProp.witnessHostPassword -ErrorAction SilentlyContinue | Out-Null
 
     LogMessage -Type INFO -Message "Pre-validating witness deployment"
     $verifyWitness = Invoke-Expression "& $verifyCommand"
     If ($verifyWitness[-1] -eq "Completed successfully") {   
         LogMessage -Type INFO -Message "Pre-validation of witness deployment: SUCCESSFUL"
         $command | Out-File $logFile -encoding ASCII -append
-        LogMessage -Type INFO -Message "Deploying vSAN Witness Appliance to $($witnessProp.witnesshost)"
+        LogMessage -Type INFO -Message "Deploying vSAN Witness Appliance to $($witnessProp.witnessTarget)"
         Invoke-Expression "& $command" | Out-File $logFile -Encoding ASCII -Append
         LogMessage -Type WAIT -Message "[$vmName] Waiting for VM Tools to start"
         Do {
             $toolsStatus = Get-VMToolsStatus -vmname $vmName
         } Until (($toolsStatus -eq "toolsOld") -OR ($toolsStatus -eq "toolsOk"))
         Start-Sleep 60
-        Disconnect-VIserver $witnessProp.witnesshost -Confirm:$false
+        Disconnect-VIserver $witnessProp.witnessTarget -Confirm:$false
 
         LogMessage -Type WAIT -Message "[$vmName] Waiting for Management Interface to be reachable"
         Do {} Until (Test-SilentNetConnection -ComputerName $ipaddress0)
 
-        #Connect-VCFvCenter -instanceObject $instanceObject
         Connect-VIServer -server $witnessProp.vcenter -user administrator@vsphere.local -Password $witnessProp.vcenterPassword | Out-Null
         LogMessage -Type INFO -Message "[$vmName] Adding Host to vCenter"
         Add-VMHost $witnessProp.witnessVMFQDN -Location $((Get-Datacenter).name) -user root -password $witnessProp.witnessVMPassword -Force | Out-Null
@@ -788,14 +823,14 @@ Function Start-JoinAdditionalESXiHosts {
     foreach ($esxihost in $config.hosts) {
         if ($esxihost.mgmt.fqdn) {
             if (Get-VMHost -Name $esxihost.mgmt.fqdn) {
-                LogMessage -type INFO -message "Host $($esxihost.mgmt.fqdn) already added to cluster: SUCCESSFUL"
+                LogMessage -type WARNING -message "Host $($esxihost.mgmt.fqdn) already added to cluster: SKIPPING"
             } else { 
                 Add-VMHost -Name $esxihost.mgmt.fqdn -Location $config.vcenter.cluster -User $esxihost.user -Password $esxihost.password -Force
                 LogMessage -type INFO -message "Host $($esxihost.mgmt.fqdn) added to cluster: SUCCESSFUL"
             }
         } else {
             if (Get-VMHost -Name $esxihost.mgmt.ip) {
-                LogMessage -type INFO -message "Host $($esxihost.mgmt.ip) already added to cluster: SUCCESSFUL"
+                LogMessage -type WARNING -message "Host $($esxihost.mgmt.ip) already added to cluster: SKIPPING"
             } else { 
                 Add-VMHost -Name $esxihost.mgmt.ip -Location $config.vcenter.cluster -User $esxihost.user -Password $esxihost.password -Force
                 LogMessage -type INFO -message "Host $($esxihost.mgmt.ip) added to cluster: SUCCESSFUL"
@@ -805,7 +840,7 @@ Function Start-JoinAdditionalESXiHosts {
     Disconnect-VIServer -server $config.vcenter.mgmt.ip -Confirm:$false
 }
 
-Function Start-CreatevDS {
+Function Start-CreatevDSdelvSS {
     Param (
         [Parameter (Mandatory = $true)] [Object]$jsonPath
         )
@@ -819,17 +854,168 @@ Function Start-CreatevDS {
     }
     
     $datacenter = Get-Datacenter -Name $config.vcenter.datacenter
-    $hosts = Get-Cluster -Name $config.vcenter.cluster | Get-VMHost
+    if($datacenter) {
+        LogMessage -type INFO -message "Found $($datacenter) object: SUCCESSFUL"
+    } else {
+        LogMessage -type INFO -message "Could not find the datacenter object called $($config.vcenter.datacenter): SUCCESSFUL"
+        break
+    }
     
-    $dvs = New-VDSwitch -Name $config.vcenter.dvswitch -Location $datacenter
-    $dvsnic = $hosts | Get-VMHostNetworkAdapter -Name "vmnic1"
-    Add-VDSwitchVMHost -VDSwitch $dvs -VMHost $hosts
-    Add-VDSwitchPhysicalNetworkAdapter -VMHostNetworkAdapter $dvsnic -DistributedSwitch $dvs -Confirm:$false
+    $hosts = Get-Cluster -Name $config.vcenter.cluster | Get-VMHost
+    if($hosts) {
+        foreach ($esxihost in $hosts) { 
+            LogMessage -type INFO -message "Found $($esxihost) eligeable to join the switch: SUCCESSFUL"
+        }
+    } else {
+        LogMessage -type INFO -message "Could not find any hosts eligeable to join the switch: SUCCESSFUL"
+        break
+    } 
+    
+    if((Get-VDSwitch -Location $datacenter).Name -eq $config.vcenter.dvswitch.name) {
+        LogMessage -type WARNING -message "Distributed vSwitch already exists: SKIPPING"
+    } else {
+        $dvs = New-VDSwitch -Name $config.vcenter.dvswitch.name -Location $datacenter
+        if(($dvs).Name -eq $config.vcenter.dvswitch.name) {
+            LogMessage -type INFO -message "Creating Distributed vSwitch: SUCCESSFUL"
+        } else {
+            LogMessage -type ERROR -message "Creating Distributed vSwitch: FAILED"
+            break
+        }
+
+        Get-VDSwitch -Name $config.vcenter.dvswitch.name | Set-VDSwitch -Mtu $config.vcenter.dvswitch.mtu | Out-Null
+        LogMessage -type INFO -message "Setting Distributed vSwitch MTU to $($config.vcenter.dvswitch.mtu): SUCCESSFUL"
+
+        foreach ($pg in $config.vcenter.dvswitch.portgroups) { 
+            LogMessage -type INFO -message "Creating portgroup $($pg.name) with vlan $($pg.vlan): SUCCESSFUL"
+            $dvs | New-VDPortgroup -Name $pg.name -VLanId $pg.vlan
+        }
+        
+        $dvsnic = $hosts | Get-VMHostNetworkAdapter -Name $config.vcenter.dvswitch.second_uplink
+        if($dvsnic){
+            foreach ($nic in $dvsnic) { 
+                LogMessage -type INFO -message "Found $($nic) to be joined to the switch: SUCCESSFUL"
+            }
+        } else {
+            LogMessage -type ERROR -message "Could not find $($nic) to be joined to the switch: FAILED"
+            break
+        }
+        
+        Add-VDSwitchVMHost -VDSwitch $dvs -VMHost $hosts
+        LogMessage -type INFO -message "Adding hosts to the switch: SUCCESSFUL"
+
+        foreach ($esxihost in $hosts) {
+            $esxi = Get-VMHost -Name $esxihost.Name
+            $pnic = Get-VMHostNetworkAdapter -VMHost $esxi -Name $config.vcenter.dvswitch.second_uplink
+            $vmk0 = Get-VMHostNetworkAdapter -VMHost $esxi -Name "vmk0"
+            LogMessage -type INFO -message "[$($esxihost.Name)] Finding vmk0: SUCCESSFUL"
+            $dvs | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $pnic -VMHostVirtualNic $vmk0 -VirtualNicPortgroup 'management' -Confirm:$false
+            LogMessage -type INFO -message "[$($esxihost.Name)] Adding uplink $($dvsnic) and migrating vmk0: SUCCESSFUL"
+        }
+       
+        LogMessage -type INFO -message "Done adding uplinks and migrating management vmkernel: SUCCESSFUL"
+    }
+
+    if((Get-Cluster -Name $config.vcenter.cluster | Get-VM -Name $config.vcenter.vm_name | Get-NetworkAdapter).NetworkName -eq "VM Network") {
+        Get-Cluster -Name $config.vcenter.cluster | Get-VM -Name $config.vcenter.vm_name | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName "management" -Confirm:$false
+        LogMessage -type INFO -message "Migrating vCenter to Distributed vSwitch: SUCCESSFUL"
+    } else {
+        LogMessage -type WARNING -message "vCenter already migrated to Distributed vSwitch: SKIPPING"
+    }
+
+    foreach ($esxihost in $hosts) {
+        LogMessage -type INFO -message "[$($esxihost.Name)] Preparing to remove vSwitch0"
+        $esxi = Get-VMhost -Name $esxihost.Name
+        $vmk0 = $esxi | Get-VMHostNetwork | Select-Object -ExpandProperty VirtualNic | Sort-Object Name
+        if((Get-VDPortGroup -Name 'management' | Get-VMHostNetworkAdapter).IP -eq $vmks.IP) {
+            LogMessage -type INFO -message "[$($esxihost.Name)] Verifing vmk0 was migrated: SUCCESSFUL"
+        } else {
+            LogMessage -type ERROR -message "[$($esxihost.Name)] vmk0 was not migrated: ERROR"
+            break
+        }
+        $vswitch = Get-VirtualSwitch -Name "vSwitch0" -VMhost $esxihost.Name
+        if($vswitch) {
+            LogMessage -type INFO -message "[$($esxihost.Name)] Deleting vSwitch0: SUCCESSFUL"
+            Remove-VirtualSwitch -VirtualSwitch $vswitch -Confirm:$false
+        } else {
+            LogMessage -type WARNING -message "[$($esxihost.Name)] Could not find vSwitch0: SKIPPING"
+        }
+
+        $first_pnic = $esxi | Get-VMHostNetworkAdapter -Name $config.vcenter.dvswitch.first_uplink
+        Add-VDSwitchPhysicalNetworkAdapter -VMHostNetworkAdapter $first_pnic -DistributedSwitch $dvs -Confirm:$false
+        LogMessage -type INFO -message "[$($esxihost.Name)] adding $($config.vcenter.dvswitch.first_uplink) to Distributed Switch: SUCCESSFUL"
+    }
 
     Disconnect-VIServer -server $config.vcenter.mgmt.ip -Confirm:$false
 }
 
-Function Start-CreatevCenterConfigProfile {
+Function Start-ConfigureEsxiHosts {
+    Param (
+        [Parameter (Mandatory = $true)] [Object]$jsonPath
+    )
+    $config = Get-deploymentConfig -jsonPath $jsonPath
+    
+    foreach ($esxihost in $config.hosts) {  
+        $esx = Get-VMhost -Name $esxihost.mgmt.ip
+        $switch = Get-VirtualSwitch -VMhost $esx -Name $config.vcenter.dvswitch.name
+
+        if(Get-VMHost -Name $esx | Get-VMHostNetworkAdapter -VMKernel | Where-Object {$_.vMotionEnabled}) {
+            LogMessage -type WARNING -message "[$($esx.Name)] VMotion interface with ip $($esxhost.vmotion.ip) and netmask $($esxhost.vmotion.netmask) with mtu $($esxhost.vmotion.mtu) exists: SKIPPING"
+        } else {
+            New-VMHostNetworkAdapter -VMHost $esx -PortGroup 'vmotion' -VirtualSwitch $switch -Mtu $esxhost.vmotion.mtu -VMotionEnabled:$true -IP $esxhost.vmotion.ip -SubnetMask $esxhost.vmotion.netmask | Out-Null
+            LogMessage -type INFO -message "[$($esx.Name)] Adding VMotion interface with ip $($esxhost.vmotion.ip) and netmask $($esxhost.vmotion.netmask) with mtu $($esxhost.vmotion.mtu): SUCCESSFUL"
+        }
+
+        if(Get-VMHost -Name $esx | Get-VMHostNetworkAdapter -VMKernel | Where-Object {$_.VsanTrafficEnabled}) {
+            LogMessage -type WARNING -message "[$($esx.Name)] vSAN interface with ip $($esxhost.vsan.ip) and netmask $($esxhost.vsan.netmask) with mtu $($esxhost.vsan.mtu) exists: SKIPPING"
+        } else {
+            New-VMHostNetworkAdapter -VMHost $esx -PortGroup 'vsan' -VirtualSwitch $switch -Mtu $esxhost.vsan.mtu -VsanTrafficEnabled $true -IP $esxhost.vsan.ip -SubnetMask $esxhost.vsan.netmask | Out-Null
+            LogMessage -type INFO -message "[$($esx.Name)] Adding vSAN interface with ip $($esxhost.vsan.ip) and netmask $($esxhost.vsan.netmask) with mtu $($esxhost.vsan.mtu): SUCCESSFUL"
+        }
+
+        if($config.global.dns01) {
+            Get-VMHostNetwork -VMHost $esx | Set-VMHostNetwork -DomainName $config.global.dnssearch -DNSAddress $config.global.dns01 , $config.global.dns02 -Confirm:$false
+            LogMessage -type INFO -message "[$($esx.Name)] Configuring DNS settings to primary dns $($config.global.dns01), secondary dns $($config.global.dns02), and search $($config.global.dnssearch): SUCCESSFUL"
+        }
+
+        if($config.global.ntp01) {
+            Add-VMHostNTPServer -NtpServer $config.global.ntp01 , $config.global.ntp02 -VMHost $esx -Confirm:$false
+            LogMessage -type INFO -message "[$($esx.Name)] Configuring NTP settings to primary ntp $($config.global.dns01), secondary ntp $($config.global.dns02): SUCCESSFUL"
+            Get-VMHost -name $esx | Get-VmHostService | Where-Object {$_.key -eq "ntpd"} | Set-VMHostService -policy "on" | Out-Null
+            LogMessage -type INFO -message "[$($esx.Name)] Enabling NTP Service: SUCCESSFUL"
+            Get-VMHostFirewallException -VMHost $esx | Where-Object {$_.Name -eq "NTP client"} | Set-VMHostFirewallException -Enabled:$true | Out-Null
+            LogMessage -type INFO -message "[$($esx.Name)] Allowing NTP Traffic through firewall: SUCCESSFUL"
+            Get-VMHostService -VMHost $esx | Where-Object {$_.Key -eq "ntpd"} | Restart-VMHostService -Confirm:$false | Out-Null
+            LogMessage -type INFO -message "[$($esx.Name)] Restarting NTP Service: SUCCESSFUL"
+        }
+
+        if($config.global.syslog){
+            $esx | Get-AdvancedSetting -Name Syslog.global.logHost | Set-AdvancedSetting -Value $config.global.syslog -Confirm:$false | Out-Null
+            LogMessage -type INFO -message "[$($esx.Name)] Configuring syslog to $($config.global.syslog): SUCCESSFUL"
+            $esxcli = Get-EsxCli -VMHost $esx
+            $esxcli.system.syslog.reload()
+            LogMessage -type INFO -message "[$($esx.Name)] reloading syslog: SUCCESSFUL"
+        }
+    }  
+}
+
+Function Start-CreatevSpherConfigProfile {
+    <#
+        .SYNOPSIS
+        Creates a vSphere Configuration Profile
+
+        .PARAMETER jsonPath
+        Path to the folder where the jsons are stored
+
+        .EXAMPLE
+        Start-CreatevSpherConfigProfile -jsonPath $jsonPath
+
+        .NOTES
+        Author: Kim Johansson
+        Github: https://github.com/maxiepax
+
+        Credits: Feidhlim O'leary
+        Article: https://blogs.vmware.com/cloud-foundation/2024/11/01/getting-started-automating-vsphere-configuration-profiles-using-vmware-powercli/
+    #>
     Param (
         [Parameter (Mandatory = $true)] [Object]$jsonPath
         )
@@ -849,8 +1035,25 @@ Function Start-CreatevCenterConfigProfile {
         $server = $refHostJson.mgmt.ip
     }
 
-    $refHost = Get-VMHost -Name $server
-    Write-Output $refHost
+    # Set cluster ID and reference host ID variables
+    $clusterid=(Get-Cluster -Name $config.vcenter.cluster).Id.Replace("ClusterComputeResource-","")
+    $hostMoid = (Get-VMHost -Name $server).Id.Replace("HostSystem-","")
+
+    # Create a draft from a reference host
+    $reqbody = Initialize-SettingsClustersConfigurationDraftsImportFromHostTaskRequestBody -VarHost $hostMoid
+    $taskid = Invoke-ImportFromHostClusterDraftAsync -Cluster $clusterid -Draft latest -SettingsClustersConfigurationDraftsImportFromHostTaskRequestBody $reqbody
+    # Check the status of the draft creation task
+    Invoke-GetTask -Task $taskid
+
+    # Export the Draft and output to File
+    $config = Invoke-ExportConfigClusterDraft -Cluster $clusterid -Draft latest
+    $json = $config.config | ConvertFrom-Json
+    $config.config | Out-File "$($jsonPath)\cluster-01-config.json"
+
+    $config.
+
 
     Disconnect-VIServer -server $config.vcenter.mgmt.ip -Confirm:$false
 }
+
+Get-VMHost -Name "10.11.11.101" | Get-VMHostNetworkAdapter -VMKernel | Where-Object {$_.vMotionEnabled}

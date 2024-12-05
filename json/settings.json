@@ -11,12 +11,14 @@
                 "vmotion": {
                     "ip": "10.11.12.101",
                     "netmask": "255.255.255.0",
-                    "gw": "10.11.12.1"
+                    "gw": "10.11.12.1",
+                    "mtu": 1500
                 },
                 "vsan": {
                     "ip": "10.11.13.101",
                     "netmask": "255.255.255.0",
-                    "gw": "10.11.13.1"
+                    "gw": "10.11.13.1",
+                    "mtu": 8900
                 }
             },
             {
@@ -30,12 +32,14 @@
                 "vmotion": {
                     "ip": "10.11.12.102",
                     "netmask": "255.255.255.0",
-                    "gw": "10.11.12.1"
+                    "gw": "10.11.12.1",
+                    "mtu": 1500
                 },
                 "vsan": {
                     "ip": "10.11.13.102",
                     "netmask": "255.255.255.0",
-                    "gw": "10.11.13.1"
+                    "gw": "10.11.13.1",
+                    "mtu": 8900
                 }
             }
     ],
@@ -44,7 +48,8 @@
         "ntp02": "10.11.10.5",
         "dns01": "10.11.10.4",
         "dns02": "10.11.10.5",
-        "dnssearch": "sfo.rainpole.io"
+        "dnssearch": "sfo.rainpole.io",
+        "syslog": "tcp://10.11.10.4:514"
     },
     "vcenter": {
         "mgmt": {
@@ -59,7 +64,26 @@
         "vm_name": "sfo-m01-vc01",
         "datacenter": "Datcenter",
         "cluster": "vSAN-Cluster",
-        "dvswitch": "dvSwitch",
+        "dvswitch": {
+            "name": "dvSwitch",
+            "first_uplink": "vmnic0",
+            "second_uplink": "vmnic1",
+            "mtu": "8900",
+            "portgroups": [
+                {
+                    "name": "management",
+                    "vlan": "1111"
+                },
+                {
+                    "name": "vmotion",
+                    "vlan": "1112"
+                },
+                {
+                    "name": "vsan",
+                    "vlan": "1113"
+                }
+            ]
+        },
         "deployment_size": "tiny",
         "ceip": false,
         "hcl_json": "custom_vsan_esa_hcl_12_04_2024_11_17_55.json"
@@ -77,7 +101,8 @@
             "ip": "10.13.11.103",
             "fqdn":"",
             "datastore": "datastore01",
-            "portgroup": "VM Network",
+            "portgroup_name": "VM Network",
+            "portgroup_vlan": "1311",
             "user": "root",
             "password": "VMw@re1!"
         }

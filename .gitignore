@@ -6,3 +6,4 @@ binaries/VMware-vSAN-ESA-Witness-8.0U3-24022510.ova
 json/all.json
 json/modified_vCSA_with_cluster_on_ESXi.json
 logs/robo.log
+json/custom_vsan_esa_hcl_12_04_2024_11_17_55.json
