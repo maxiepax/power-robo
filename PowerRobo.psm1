@@ -266,18 +266,18 @@ Function Start-TwoNodeClusterMenu {
                     anyKey
                 }
                 32 {
-                    if (!$headlessPassed) { Clear-Host }; Write-Host `n " $submenuTitle : $menuItem31" -Foregroundcolor Cyan; Write-Host ''
+                    if (!$headlessPassed) { Clear-Host }; Write-Host `n " $submenuTitle : $menuItem32" -Foregroundcolor Cyan; Write-Host ''
                     Start-CreatevDSdelvSS -jsonPath $jsonPath
                     anyKey
                 }
                 33 {
-                    if (!$headlessPassed) { Clear-Host }; Write-Host `n " $submenuTitle : $menuItem31" -Foregroundcolor Cyan; Write-Host ''
+                    if (!$headlessPassed) { Clear-Host }; Write-Host `n " $submenuTitle : $menuItem33" -Foregroundcolor Cyan; Write-Host ''
                     Start-ConfigureEsxiHosts -jsonPath $jsonPath
                     anyKey
                 }
                 34 {
-                    if (!$headlessPassed) { Clear-Host }; Write-Host `n " $submenuTitle : $menuItem31" -Foregroundcolor Cyan; Write-Host ''
-                    Start-ConfigurevSAN -jsonPath $jsonPath
+                    if (!$headlessPassed) { Clear-Host }; Write-Host `n " $submenuTitle : $menuItem34" -Foregroundcolor Cyan; Write-Host ''
+                    Start-ConfigureTwoNodevSANwithWitness -jsonPath $jsonPath
                     anyKey
                 }
                 B {
