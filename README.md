@@ -10,6 +10,7 @@ Along with either a 3rd ESXi host that can host the Witness VM, or a remote vCen
 
 # 3+ nodes without witness (not ready yet)
 This option does not require a witness but still handles the generation of files, and deployment of vcenter, and automation of configuring the cluster.
+
 <img width="551" alt="image" src="https://github.com/user-attachments/assets/55522486-515b-43ec-85b9-e174864ac24c">
 
 
