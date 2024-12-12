@@ -346,7 +346,11 @@ Function New-generateVCSAJson () {
     LogMessage -type INFO -message "Reading VCSA json file into memory: SUCCESSFUL"
     
     #Target ESXi 
-    $vcsaJson.new_vcsa.esxi.hostname = $esxhost.mgmt.ip
+    if($esxhost.mgmt.fqdn) {
+        $vcsaJson.new_vcsa.esxi.hostname = $esxhost.mgmt.fqdn
+    } else {
+        $vcsaJson.new_vcsa.esxi.hostname = $esxhost.mgmt.ip
+    }
     $vcsaJson.new_vcsa.esxi.password = $esxhost.password
     LogMessage -type INFO -message "Modifying target esxi settings: SUCCESSFUL"
     $vcsaJson.new_vcsa.esxi.VCSA_cluster.datacenter = $deploymentConfig.vcenter.datacenter
@@ -474,8 +478,8 @@ Function Test-ESXiHosts2node {
             }
         }
     
-        if ($config.witnesstarget.mgmt.fqdn) {
-            if (Test-SilentNetConnection -computerName $config.witnesstarget.mgmt.fqdn) {
+        if ($config.witnesstarget.common.fqdn) {
+            if (Test-SilentNetConnection -computerName $config.witnesstarget.common.fqdn) {
                 LogMessage -type INFO -message "Testing connectivity to $($config.witnesstarget.common.fqdn): SUCCESSFUL"
             } else {
                 LogMessage -type WARNING -message "Testing connectivity to $($config.witnesstarget.common.fqdn): FAILED"
@@ -697,8 +701,6 @@ Function Start-vSANWitnessDeployment {
 
     LogMessage -Type NOTE -Message "Building Deployment Specification: SUCCESSFULL"
 
-    Write-Output $deploymentSpec
-
     New-VSANWitnessDeployment -witnessProp $deploymentSpec -binaries $binaryPath
     
 }
@@ -793,7 +795,7 @@ Function New-VSANWitnessDeployment {
         Get-VMHost $witnessProp.witnessVMFQDN | Get-VirtualSwitch -name "secondarySwitch" | Remove-VirtualSwitch -confirm:$false
     
         Disconnect-VIServer * -Force -Confirm:$false -WarningAction SilentlyContinue | Out-Null
-        LogMessage -Type NOTE -Message "Deploying vSAN witness: SUCCESSFUL"
+        LogMessage -Type NOTE -Message "Deployment and configuration of vSAN Witness: COMPLETED"
     }
      else
     {
@@ -802,9 +804,6 @@ Function New-VSANWitnessDeployment {
         anyKey
         Break
     }
-  
-    LogMessage -Type NOTE -Message "Deployment and configuration of vSAN Witness: COMPLETED"
-
 }
 
 Function New-VCSADeployment () {
@@ -854,7 +853,13 @@ Function Start-JoinAdditionalESXiHosts {
         
     $config = Get-deploymentConfig -jsonPath $jsonPath
 
-    Connect-VIServer -server $config.vcenter.mgmt.ip -user administrator@vsphere.local -pass $config.vcenter.sso_administrator_password -ErrorAction SilentlyContinue | Out-Null
+    if ($config.vcenter.mgmt.fqdn) {
+        $vcenter = $config.vcenter.mgmt.fqdn
+    } else {
+        $vcenter = $config.vcenter.mgmt.ip
+    }
+    Connect-VIServer -server $vcenter -user administrator@vsphere.local -pass $config.vcenter.sso_administrator_password -ErrorAction SilentlyContinue | Out-Null
+
     foreach ($esxihost in $config.hosts) {
         if ($esxihost.mgmt.fqdn) {
             if (Get-VMHost -Name $esxihost.mgmt.fqdn) {
@@ -872,7 +877,7 @@ Function Start-JoinAdditionalESXiHosts {
             }
         }
     }
-    Disconnect-VIServer -server $config.vcenter.mgmt.ip -Confirm:$false
+    Disconnect-VIServer -server $vcenter -Confirm:$false
 }
 
 Function Start-CreatevDSdelvSS {
@@ -883,10 +888,12 @@ Function Start-CreatevDSdelvSS {
     $config = Get-deploymentConfig -jsonPath $jsonPath
 
     if ($config.vcenter.mgmt.fqdn) {
-        Connect-VIServer -server $config.vcenter.mgmt.fqdn -user administrator@vsphere.local -pass $config.vcenter.sso_administrator_password -ErrorAction SilentlyContinue | Out-Null
+        $vcenter = $config.vcenter.mgmt.fqdn
     } else {
-        Connect-VIServer -server $config.vcenter.mgmt.ip -user administrator@vsphere.local -pass $config.vcenter.sso_administrator_password -ErrorAction SilentlyContinue | Out-Null
+        $vcenter = $config.vcenter.mgmt.ip
     }
+    Connect-VIServer -server $vcenter -user administrator@vsphere.local -pass $config.vcenter.sso_administrator_password -ErrorAction SilentlyContinue | Out-Null
+
     
     $datacenter = Get-Datacenter -Name $config.vcenter.datacenter
     if($datacenter) {
@@ -922,7 +929,7 @@ Function Start-CreatevDSdelvSS {
 
         foreach ($pg in $config.vcenter.dvswitch.portgroups) { 
             LogMessage -type INFO -message "Creating portgroup $($pg.name) with vlan $($pg.vlan): SUCCESSFUL"
-            $dvs | New-VDPortgroup -Name $pg.name -VLanId $pg.vlan
+            $dvs | New-VDPortgroup -Name $pg.name -VLanId $pg.vlan | Out-Null
         }
         
         $dvsnic = $hosts | Get-VMHostNetworkAdapter -Name $config.vcenter.dvswitch.second_uplink
@@ -951,7 +958,7 @@ Function Start-CreatevDSdelvSS {
     }
 
     if((Get-Cluster -Name $config.vcenter.cluster | Get-VM -Name $config.vcenter.vm_name | Get-NetworkAdapter).NetworkName -eq "VM Network") {
-        Get-Cluster -Name $config.vcenter.cluster | Get-VM -Name $config.vcenter.vm_name | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName "management" -Confirm:$false
+        Get-Cluster -Name $config.vcenter.cluster | Get-VM -Name $config.vcenter.vm_name | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName "management" -Confirm:$false | Out-Null
         LogMessage -type INFO -message "Migrating vCenter to Distributed vSwitch: SUCCESSFUL"
     } else {
         LogMessage -type WARNING -message "vCenter already migrated to Distributed vSwitch: SKIPPING"
@@ -972,7 +979,7 @@ Function Start-CreatevDSdelvSS {
         LogMessage -type INFO -message "[$($esxihost.Name)] adding $($config.vcenter.dvswitch.first_uplink) to Distributed Switch: SUCCESSFUL"
     }
 
-    Disconnect-VIServer -server $config.vcenter.mgmt.ip -Confirm:$false
+    Disconnect-VIServer -server $vcenter -Confirm:$false
 }
 
 Function Start-ConfigureEsxiHosts {
@@ -982,13 +989,19 @@ Function Start-ConfigureEsxiHosts {
     $config = Get-deploymentConfig -jsonPath $jsonPath
     
     if ($config.vcenter.mgmt.fqdn) {
-        Connect-VIServer -server $config.vcenter.mgmt.fqdn -user administrator@vsphere.local -pass $config.vcenter.sso_administrator_password -ErrorAction SilentlyContinue | Out-Null
+        $vcenter = $config.vcenter.mgmt.fqdn
     } else {
-        Connect-VIServer -server $config.vcenter.mgmt.ip -user administrator@vsphere.local -pass $config.vcenter.sso_administrator_password -ErrorAction SilentlyContinue | Out-Null
+        $vcenter = $config.vcenter.mgmt.ip
     }
+    Connect-VIServer -server $vcenter -user administrator@vsphere.local -pass $config.vcenter.sso_administrator_password -ErrorAction SilentlyContinue | Out-Null
 
-    foreach ($esxihost in $config.hosts) {  
-        $esx = Get-VMhost -Name $esxihost.mgmt.ip
+    foreach ($esxihost in $config.hosts) {
+        if($esxihost.mgmt.fqdn) {
+            $esx = Get-VMhost -Name $esxihost.mgmt.fqdn
+         } else {
+            $esx = Get-VMhost -Name $esxihost.mgmt.ip
+         }
+
         $switch = Get-VirtualSwitch -VMhost $esx -Name $config.vcenter.dvswitch.name
 
         if(Get-VMHost -Name $esx | Get-VMHostNetworkAdapter -VMKernel | Where-Object {$_.vMotionEnabled}) {
@@ -1016,7 +1029,7 @@ Function Start-ConfigureEsxiHosts {
         }
 
         if($config.global.dns01) {
-            if(((Get-VMhost -Name 10.11.11.101 | ForEach-Object { $_ | Select-Object Name, @{N="DNSAddress";E={($_ | Get-VMhostNetwork).DNSAddress -join "," }} }).DNSAddress) -eq "$($config.global.dns01),$($config.global.dns02)"){
+            if(((Get-VMhost -Name $esx.Name | ForEach-Object { $_ | Select-Object Name, @{N="DNSAddress";E={($_ | Get-VMhostNetwork).DNSAddress -join "," }} }).DNSAddress) -eq "$($config.global.dns01),$($config.global.dns02)"){
                 LogMessage -type WARNING -message "[$($esx.Name)] DNS already configured: SKIPPING"
             } else {
                 Get-VMHostNetwork -VMHost $esx | Set-VMHostNetwork -DomainName $config.global.dnssearch -DNSAddress $config.global.dns01 , $config.global.dns02 -Confirm:$false
@@ -1053,21 +1066,20 @@ Function Start-ConfigureEsxiHosts {
     }
 
     LogMessage -type INFO -message "[$($config.vcenter.cluster)] Setting SSH startup policy to disabled: SUCCESSFUL"
-    Get-VMhost | get-vmhostservice | where-object {$_.key -eq "TSM-SSH"} | set-vmhostservice -policy "Off"
+    Get-VMhost | get-vmhostservice | where-object {$_.key -eq "TSM-SSH"} | set-vmhostservice -policy "Off" | Out-Null
 
     LogMessage -type INFO -message "[$($config.vcenter.cluster)] Turning off SSH: SUCCESSFUL"
-    Get-VMhost | get-VMHostService | where-object {$_.Label -eq "SSH"} | Stop-VMHostService -Confirm:$false
+    Get-VMhost | get-VMHostService | where-object {$_.Label -eq "SSH"} | Stop-VMHostService -Confirm:$false | Out-Null
 
     LogMessage -type INFO -message "[$($config.vcenter.cluster)] Setting SSH startup policy to disabled: SUCCESSFUL"
-    get-vmhost | get-vmhostservice | where-object {$_.key -eq "TSM"} | set-vmhostservice -policy "Off"
+    get-vmhost | get-vmhostservice | where-object {$_.key -eq "TSM"} | set-vmhostservice -policy "Off" | Out-Null
 
     LogMessage -type INFO -message "[$($config.vcenter.cluster)] Turning off SSH: SUCCESSFUL"
-    get-vmhost | get-vmhostservice | where-object {$_.key -eq "TSM"} | Stop-VMHostService -Confirm:$false
+    get-vmhost | get-vmhostservice | where-object {$_.key -eq "TSM"} | Stop-VMHostService -Confirm:$false | Out-Null
 
+    Disconnect-VIServer -server $vcenter -Confirm:$false
 
-    Disconnect-VIServer -server $config.vcenter.mgmt.ip -Confirm:$false
     LogMessage -type NOTE -message "Configuring hosts: COMPLETED"
-
 }
 
 Function Start-ConfigureTwoNodevSANwithWitness {
@@ -1078,10 +1090,11 @@ Function Start-ConfigureTwoNodevSANwithWitness {
     $config = Get-deploymentConfig -jsonPath $jsonPath
     
     if ($config.vcenter.mgmt.fqdn) {
-        Connect-VIServer -server $config.vcenter.mgmt.fqdn -user administrator@vsphere.local -pass $config.vcenter.sso_administrator_password -ErrorAction SilentlyContinue | Out-Null
+        $vcenter = $config.vcenter.mgmt.fqdn
     } else {
-        Connect-VIServer -server $config.vcenter.mgmt.ip -user administrator@vsphere.local -pass $config.vcenter.sso_administrator_password -ErrorAction SilentlyContinue | Out-Null
+        $vcenter = $config.vcenter.mgmt.ip
     }
+    Connect-VIServer -server $vcenter -user administrator@vsphere.local -pass $config.vcenter.sso_administrator_password -ErrorAction SilentlyContinue | Out-Null
 
     $cluster = Get-Cluster -Name $config.vcenter.cluster
     if ($cluster.ExtensionData.HciConfig.WorkflowState -eq "in_progress")
@@ -1090,20 +1103,41 @@ Function Start-ConfigureTwoNodevSANwithWitness {
         $Cluster.ExtensionData.AbandonHciWorkflow()
     }
 
-    LogMessage -type INFO -message "[$($config.hosts[1].mgmt.ip)] Gathering list of disks to be used by vSAN"
-    $disks = Get-vSANCompatibleDrives -esxihost $config.hosts[1].mgmt.ip -password $config.hosts[1].password
-
-    foreach ($disk in $disks) {
-        Add-VsanStoragePoolDisk -VMHost (Get-VMHost $config.hosts[1].mgmt.ip) -VsanStoragePoolDiskType "singleTier" -DiskCanonicalName $disk.Device | Out-Null
-        LogMessage -type INFO -message "[$($config.hosts[1].mgmt.ip)] Added disk $($disk.Device)"
+    if ($config.hosts[0].mgmt.fqdn) {
+        $host1 = $config.hosts[0].mgmt.fqdn
+        $host2 = $config.hosts[1].mgmt.fqdn
+    } else {
+        $host1 = $config.hosts[0].mgmt.ip
+        $host2 = $config.hosts[1].mgmt.ip
     }
 
-    $witness = Get-VMhost -name $config.vsanwitness.ip
+    LogMessage -type INFO -message "[$($host2)] Gathering list of disks to be used by vSAN"
+    $disks = Get-vSANCompatibleDrives -esxihost $host2 -password $config.hosts[1].password
+
+    foreach ($disk in $disks) {
+        Add-VsanStoragePoolDisk -VMHost (Get-VMHost $host2) -VsanStoragePoolDiskType "singleTier" -DiskCanonicalName $disk.Device | Out-Null
+        LogMessage -type INFO -message "[$($host2)] Added disk $($disk.Device)"
+    }
+
+    LogMessage -type INFO -message "[$($config.vcenter.cluster)] Creating vSAN Fault domains"
+    if ($config.vsanwitness.fqdn) {
+        $witness = Get-VMhost -name $config.vsanwitness.fqdn
+    } else {
+        $witness = Get-VMhost -name $config.vsanwitness.ip    
+    }
+    $witness = Get-VMhost -name $witness
     $cluster = Get-Cluster -Name $config.vcenter.cluster
-    $primary_fd = New-VsanFaultDomain -Name 'Preferred' -VMHost $config.hosts[0].mgmt.ip
-    New-VsanFaultDomain -Name 'Secondary' -VMHost $config.hosts[1].mgmt.ip | Out-Null
+    $primary_fd = New-VsanFaultDomain -Name 'Preferred' -VMHost $host1
+    New-VsanFaultDomain -Name 'Secondary' -VMHost $host2 | Out-Null
+    LogMessage -type INFO -message "[$($config.vcenter.cluster)] Assigning witness to cluster"
     Set-VsanClusterConfiguration -Configuration $cluster -StretchedClusterEnabled $true -PreferredFaultDomain $primary_fd -WitnessHost $witness -PerformanceServiceEnabled:$true -Confirm:$false | Out-Null
     
+    LogMessage -type INFO -message "[$($config.vcenter.vm_name)] Re-Applying vSAN Default Storage Policy"
+    Get-VM -Name $config.vcenter.vm_name | Set-SpbmEntityConfiguration -StoragePolicy "vSAN Default Storage Policy"
+
+    LogMessage -type NOTE -message "vSAN configuration: COMPLETED"
+    Disconnect-VIServer -server $vcenter -Confirm:$false
+
     #$vmhost = Get-Vmhost $config.vsanwitness.ip
     #$spec=Initialize-SettingsHostsEnablementSoftwareEnableSpec -SkipSoftwareCheck $false
     #Invoke-SetHostEnablementSoftwareAsync -Host $vmhost.ExtensionData.MoRef.Value -SettingsHostsEnablementSoftwareEnableSpec $spec
@@ -1112,20 +1146,5 @@ Function Start-ConfigureTwoNodevSANwithWitness {
     #$build = Get-VMHost -Name $config.vsanwitness.ip | Select-Object Build
     #$desiredBuild = Get-LCMImage -Type 'BaseImage' | Where-Object { $_.Version -Like "*$($build.Build)" }    
     #$desiredImage = Get-LCMImage -Version $desiredBuild.Version -Type BaseImage
-   <#
-   .SYNOPSIS
-   Short description
-   
-   .DESCRIPTION
-   Long description
-   
-   .PARAMETER jsonPath
-   Parameter description
-   
-   .EXAMPLE
-   An example
-   
-   .NOTES
-   General notes
-   #>Get-VMHost -Name $config.vsanwitness.ip | Set-VMHost -BaseImage $desiredImage
+    #Get-VMHost -Name $config.vsanwitness.ip | Set-VMHost -BaseImage $desiredImage
 }

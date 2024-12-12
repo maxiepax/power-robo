@@ -6,7 +6,7 @@
                 "password": "VMw@re1!",
                 "mgmt": {
                     "ip": "10.11.11.101",
-                    "fqdn": ""
+                    "fqdn": "sfo01-m01-r01-esx01.sfo.rainpole.io"
                 },
                 "vmotion": {
                     "ip": "10.11.12.101",
@@ -27,7 +27,7 @@
                 "password": "VMw@re1!",
                 "mgmt": {
                     "ip": "10.11.11.102",
-                    "fqdn": ""
+                    "fqdn": "sfo01-m01-r01-esx02.sfo.rainpole.io"
                 },
                 "vmotion": {
                     "ip": "10.11.12.102",
@@ -53,7 +53,7 @@
     },
     "vcenter": {
         "mgmt": {
-            "fqdn": "",
+            "fqdn": "vcenter.sfo.rainpole.io",
             "ip": "10.11.11.10",
             "prefix": "24",
             "gw": "10.11.11.1"
@@ -61,7 +61,7 @@
         "appliance_password": "VMw@re1!",
         "sso_domain": "vsphere.local",
         "sso_administrator_password": "VMw@re1!",
-        "vm_name": "sfo-m01-vc01",
+        "vm_name": "vcenter",
         "datacenter": "Datcenter",
         "cluster": "vSAN-Cluster",
         "dvswitch": {
@@ -99,7 +99,7 @@
         },
         "common":  {
             "ip": "10.13.11.103",
-            "fqdn":"",
+            "fqdn":"sfo01-w01-r01-esx03.sfo.rainpole.io",
             "datastore": "datastore01",
             "portgroup_name": "VM Network",
             "portgroup_vlan": "1311",
@@ -111,7 +111,7 @@
         "hostname": "vsanwitness",
         "vm_name": "vsanwitness",
         "ip": "10.13.11.90",
-        "fqdn": "",
+        "fqdn": "vsanwitness.sfo.rainpole.io",
         "netmask": "255.255.255.0",
         "gateway": "10.13.11.1",
         "mgmtVlan": "1311",
