@@ -131,11 +131,11 @@ Function Start-PowerRoboMenu {
 
         $submenuTitle = ("Deployment Options")
 
-        $headingItem01 = "Two node"
-        $menuItem01 = "Two node with witness"
+        $headingItem01 = "Two Node"
+        $menuItem01 = "Two Node with witness"
 
-        $headingItem02 = "Three node (or more)"
-        $menuItem02 = "Three node without witness"
+        $headingItem02 = "Multi Node"
+        $menuItem02 = "Multi Node without witness"
 
         $headingItem99 = "Help"
         $menuItem99 = "Documentation"
@@ -174,7 +174,10 @@ Function Start-PowerRoboMenu {
                     if (!$headlessPassed) { Clear-Host }; Write-Host `n " $menuTitle" -Foregroundcolor Cyan; Write-Host ''
                     Start-TwoNodeClusterMenu
                 }
-
+                2 {
+                    if (!$headlessPassed) { Clear-Host }; Write-Host `n " $menuTitle" -Foregroundcolor Cyan; Write-Host ''
+                    Start-MultiNodeClusterMenu
+                }
                 B {
                     if (!$headlessPassed) { Clear-Host }
                     Break
@@ -251,12 +254,12 @@ Function Start-TwoNodeClusterMenu {
                 }
                 11 {
                     if (!$headlessPassed) { Clear-Host }; Write-Host `n " $submenuTitle : $menuItem12" -Foregroundcolor Cyan; Write-Host ''
-                    Test-ESXiHosts2nodeFiles -binaryPath ($binaryPath)
+                    Test-ESXiHostsTwoNodeFiles -binaryPath ($binaryPath)
                     anyKey
                 }
                 12 {
                     if (!$headlessPassed) { Clear-Host }; Write-Host `n " $submenuTitle : $menuItem12" -Foregroundcolor Cyan; Write-Host ''
-                    Test-ESXiHosts2node -jsonPath ($jsonPath)
+                    Test-ESXiHostsTwoNode -jsonPath ($jsonPath)
                     anyKey
                 }
                 21 {
@@ -301,6 +304,112 @@ Function Start-TwoNodeClusterMenu {
     }
 }
 
+Function Start-MultiNodeClusterMenu {
+    Try {
+        $jsonSpecFile = "settings.json"
+        $submenuTitle = ("Multi Node without witness")
+
+        $headingItem01 = "Generate Config Files"
+        $menuitem01 = "Generate VCSA deployment specification"
+
+        $headingItem02 = "Verification"
+        $menuitem11 = "Verify required files exist"
+        $menuitem12 = "Verify infrastructure"
+
+        $headingItem03 = "Deployment"
+        $menuitem21 = "Deploy VCSA"
+        
+        $headingItem04 = "Post-Configuration"
+        $menuitem31 = "Join remaining hosts to VCSA"
+        $menuitem32 = "Create Distributed vSwitch"
+        $menuitem33 = "Configure ESXi hosts"
+        $menuitem34 = "Setup vSAN"
+
+        Do {
+            if (!$headlessPassed) { Clear-Host }
+            if ($headlessPassed) {
+                Write-Host ""; Write-Host -Object $menuHeader -ForegroundColor Magenta
+            } elseif (Get-InstalledModule -Name WriteAscii -ErrorAction SilentlyContinue) {
+                Write-Host ""; Write-Ascii -InputObject $menuHeader -ForegroundColor Magenta
+            }
+
+
+            $menuTitle = "$submenuTitle"
+            Write-Host ""; Write-Host -Object " $menuTitle" -ForegroundColor Cyan
+
+            Write-Host ""; Write-Host -Object " $headingItem01" -ForegroundColor Yellow
+            Write-Host -Object " 01. $menuItem01" -ForegroundColor White
+
+            Write-Host ""; Write-Host -Object " $headingItem02" -ForegroundColor Yellow
+            Write-Host -Object " 11. $menuItem11" -ForegroundColor White
+            Write-Host -Object " 12. $menuItem12" -ForegroundColor White
+
+            Write-Host ""; Write-Host -Object " $headingItem03" -ForegroundColor Yellow
+            Write-Host -Object " 21. $menuItem21" -ForegroundColor White
+
+            Write-Host ""; Write-Host -Object " $headingItem04" -ForegroundColor Yellow
+            Write-Host -Object " 31. $menuItem31" -ForegroundColor White
+            Write-Host -Object " 32. $menuItem32" -ForegroundColor White
+            Write-Host -Object " 33. $menuItem33" -ForegroundColor White
+            Write-Host -Object " 34. $menuItem34" -ForegroundColor White
+
+            Write-Host -Object ''
+            $menuInput = if ($clioptions) { Get-NextSolutionOption } else { Read-Host -Prompt ' Select Option (or B to go Back) to Return to Previous Menu' }
+            $menuInput = $MenuInput -replace "`t|`n|`r", ""
+            if ($MenuInput -like "0*") { $MenuInput = ($MenuInput -split ("0"), 2)[1] }
+            Switch ($menuInput) {
+                1 {
+                    if (!$headlessPassed) { Clear-Host }; Write-Host `n " $submenuTitle : $menuItem01" -Foregroundcolor Cyan; Write-Host ''
+                    New-generateVCSAJson -jsonFile ($jsonPath + $jsonSpecFile)
+                    anyKey
+                }
+                11 {
+                    if (!$headlessPassed) { Clear-Host }; Write-Host `n " $submenuTitle : $menuItem12" -Foregroundcolor Cyan; Write-Host ''
+                    Test-ESXiHostsMultinodeFiles -binaryPath ($binaryPath)
+                    anyKey
+                }
+                12 {
+                    if (!$headlessPassed) { Clear-Host }; Write-Host `n " $submenuTitle : $menuItem12" -Foregroundcolor Cyan; Write-Host ''
+                    Test-ESXiHostsMultiNode -jsonPath ($jsonPath)
+                    anyKey
+                }
+                21 {
+                    if (!$headlessPassed) { Clear-Host }; Write-Host `n " $submenuTitle : $menuItem21" -Foregroundcolor Cyan; Write-Host ''
+                    New-VCSADeployment -binaryPath $binaryPath -jsonPath $jsonPath -logFile $logFile
+                    anyKey
+                }
+                31 {
+                    if (!$headlessPassed) { Clear-Host }; Write-Host `n " $submenuTitle : $menuItem31" -Foregroundcolor Cyan; Write-Host ''
+                    Start-JoinAdditionalESXiHosts -jsonPath $jsonPath
+                    anyKey
+                }
+                32 {
+                    if (!$headlessPassed) { Clear-Host }; Write-Host `n " $submenuTitle : $menuItem32" -Foregroundcolor Cyan; Write-Host ''
+                    Start-CreatevDSdelvSS -jsonPath $jsonPath
+                    anyKey
+                }
+                33 {
+                    if (!$headlessPassed) { Clear-Host }; Write-Host `n " $submenuTitle : $menuItem33" -Foregroundcolor Cyan; Write-Host ''
+                    Start-ConfigureEsxiHosts -jsonPath $jsonPath
+                    anyKey
+                }
+                34 {
+                    if (!$headlessPassed) { Clear-Host }; Write-Host `n " $submenuTitle : $menuItem34" -Foregroundcolor Cyan; Write-Host ''
+                    Start-ConfigureMultiNodevSAN -jsonPath $jsonPath
+                    anyKey
+                }
+                B {
+                    if (!$headlessPassed) { Clear-Host }
+                    Break
+                }
+            }
+        }
+        Until ($MenuInput -eq 'b')
+    } Catch {
+        Debug-ExceptionWriter -object $_
+    }
+}
+
 #######################################################################################################################
 #Region                                    I N F O  G A T H E R I N G                                       ###########
 
@@ -321,11 +430,10 @@ Function Get-vSANCompatibleDrives {
     )
     $Null = @(
         Connect-VIServer -Server $esxiHost -user root -Password $password
-        LogMessage -type INFO -message "Connecting to ESXi host $($esxiHost): SUCCESSFUL"
         $esxcli = Get-EsxCli -VMhost $esxiHost
         $disks = $esxcli.storage.core.device.list.Invoke() | Select-Object -Property Device, @{ n = "Size"; e = { [int]($_.Size) } } | Where-Object { $_.Size -gt 500000 }
         Disconnect-VIServer -Server $esxiHost -Confirm:$false
-        LogMessage -type INFO -message "Disconnecting from ESXi host $($esxiHost): SUCCESSFUL"
+        LogMessage -type INFO -message "Gathering vSAN Compatible disks from ESXi host $($esxiHost): SUCCESSFUL"
         )
     return $disks
 }
@@ -445,7 +553,7 @@ Function Test-SilentNetConnection {
     Return $testResult
 }
 
-Function Test-ESXiHosts2node {
+Function Test-ESXiHostsTwoNode {
     Param (
         [Parameter (Mandatory = $true)] [Object]$jsonPath
     )
@@ -540,7 +648,60 @@ Function Test-ESXiHosts2node {
 
 }
 
-Function Test-ESXiHosts2nodeFiles {
+Function Test-ESXiHostsMultiNode {
+    Param (
+        [Parameter (Mandatory = $true)] [Object]$jsonPath
+    )
+    $config = Get-deploymentConfig -json $jsonPath
+    
+    foreach ($esxihost in $config.hosts) {
+        if (Test-SilentNetConnection -computerName $esxihost.mgmt.ip) {
+            LogMessage -type INFO -message "Testing connectivity to $($esxihost.mgmt.ip): SUCCESSFUL"
+        } else {
+            LogMessage -type WARNING -message "Testing connectivity to $($esxihost.mgmt.ip): FAILED"
+        }
+    }
+
+    if ($config.global.dns01) {
+        foreach ($esxihost in $config.hosts) {
+            if ($esxihost.mgmt.fqdn) {
+                if (Test-SilentNetConnection -computerName $esxihost.mgmt.fqdn) {
+                    LogMessage -type INFO -message "Testing connectivity to $($esxihost.mgmt.fqdn): SUCCESSFUL"
+                } else {
+                    LogMessage -type WARNING -message "Testing connectivity to $($esxihost.mgmt.fqdn): FAILED"
+                }
+            } else {
+                LogMessage -type WARNING -message "Missing FQDN for $($esxihost.mgmt.ip): FAILED"
+            }
+        }
+    }
+
+    foreach ($esxihost in $config.hosts) {
+        if (Connect-VIServer -Server $esxihost.mgmt.ip -user root -Password $esxihost.password) {
+            LogMessage -type INFO -message "[$($esxihost.mgmt.ip)] Testing credentials: SUCCESSFUL"
+            $esxcli = Get-EsxCli -VMhost $esxihost.mgmt.ip
+            $disks = $esxcli.storage.core.device.list.Invoke() | Select-Object -Property Device, @{ n = "Size"; e = { [int]($_.Size) } } | Where-Object { $_.Size -gt 500000 }
+            if ($disks) {
+                LogMessage -type INFO -message "[$($esxihost.mgmt.ip)] Checking for vSAN Claimable disks: SUCCESSFUL"
+                foreach ($disk in $disks) {
+                    LogMessage -type INFO -message "[$($esxihost.mgmt.ip)] Found vSAN eligeable disk $($disk.device) with size $($disk.size)mb: SUCCESSFUL"
+                }
+            } else {
+                LogMessage -type ERROR -message "[$($esxihost.mgmt.ip)] Checking for vSAN Claimable disks: FAILED"
+            }  
+            Disconnect-viserver -Server $esxihost.mgmt.ip -Confirm:$false
+        } else {
+            LogMessage -type WARNING -message "[$($esxihost.mgmt.ip)] Testing credentials: FAILED"
+            Disconnect-viserver -Server $esxihost.mgmt.i -Confirm:$false
+
+        }
+    }
+
+    LogMessage -Type NOTE -Message "Verifying Infrastructure: COMPLETED"
+
+}
+
+Function Test-ESXiHostsTwoNodeFiles {
     Param (
         [Parameter (Mandatory = $true)] [Object]$binaryPath
     )
@@ -552,13 +713,27 @@ Function Test-ESXiHosts2nodeFiles {
         LogMessage -type WARNING -message "Cloud not find VCSA ISO: FAILURE"
     }
 
-    $vcsaISO = Get-ChildItem $binaryPath -Filter *VMware-vSAN-ESA-Witness* | ForEach-Object { $_.FullName }
-    if ($vcsaISO) {
+    $witnessOVA = Get-ChildItem $binaryPath -Filter *VMware-vSAN-ESA-Witness* | ForEach-Object { $_.FullName }
+    if ($witnessOVA) {
         LogMessage -type INFO -message "Checking binaries folder for ESA Witness OVA: SUCCESSFUL"
     } else {
         LogMessage -type WARNING -message "Cloud not find ESA Witness OVA: FAILURE"
     }
     
+    LogMessage -Type NOTE -Message "Verifying required files: COMPLETED"
+}
+
+Function Test-ESXiHostsMultinodeFiles {
+    Param (
+        [Parameter (Mandatory = $true)] [Object]$binaryPath
+    )
+    
+    $vcsaISO = Get-ChildItem $binaryPath -Filter *VCSA* | ForEach-Object { $_.FullName }
+    if ($vcsaISO) {
+        LogMessage -type INFO -message "Checking binaries folder for VCSA ISO: SUCCESSFUL"
+    } else {
+        LogMessage -type WARNING -message "Cloud not find VCSA ISO: FAILURE"
+    }
     LogMessage -Type NOTE -Message "Verifying required files: COMPLETED"
 }
 
@@ -1018,14 +1193,16 @@ Function Start-ConfigureEsxiHosts {
             LogMessage -type INFO -message "[$($esx.Name)] Adding vSAN interface with ip $($esxihost.vsan.ip) and netmask $($esxihost.vsan.netmask) with mtu $($esxihost.vsan.mtu): SUCCESSFUL"
         }
 
-        $esxcli = Get-EsxCli -VMHost $esx
-        $wts_set = $esxcli.vsan.network.list() | Where-Object VmkNicName -eq vmk0 | Select-Object TrafficType
-        if($wts_set) {
-            LogMessage -type WARNING -message "[$($esx.Name)] Witness Traffic Separation already set to interface vmk0: WARNING"
+        if ($config.hosts.Count -lt 2) {
+            $esxcli = Get-EsxCli -VMHost $esx
+            $wts_set = $esxcli.vsan.network.list() | Where-Object VmkNicName -eq vmk0 | Select-Object TrafficType
+            if($wts_set) {
+                LogMessage -type WARNING -message "[$($esx.Name)] Witness Traffic Separation already set to interface vmk0: WARNING"
 
-        } else {
-            Get-VMHost -Name $esx | Get-EsxCli -v2 | ForEach-Object {$_.vsan.network.ip.add.Invoke(@{traffictype='witness';interfacename='vmk0'})}
-            LogMessage -type INFO -message "[$($esx.Name)] Adding Witness Traffic Separation to interface vmk0: SUCCESSFUL"
+            } else {
+                Get-VMHost -Name $esx | Get-EsxCli -v2 | ForEach-Object {$_.vsan.network.ip.add.Invoke(@{traffictype='witness';interfacename='vmk0'})}
+                LogMessage -type INFO -message "[$($esx.Name)] Adding Witness Traffic Separation to interface vmk0: SUCCESSFUL"
+            }
         }
 
         if($config.global.dns01) {
@@ -1137,14 +1314,49 @@ Function Start-ConfigureTwoNodevSANwithWitness {
 
     LogMessage -type NOTE -message "vSAN configuration: COMPLETED"
     Disconnect-VIServer -server $vcenter -Confirm:$false
+}
 
-    #$vmhost = Get-Vmhost $config.vsanwitness.ip
-    #$spec=Initialize-SettingsHostsEnablementSoftwareEnableSpec -SkipSoftwareCheck $false
-    #Invoke-SetHostEnablementSoftwareAsync -Host $vmhost.ExtensionData.MoRef.Value -SettingsHostsEnablementSoftwareEnableSpec $spec
-    #LogMessage -type INFO -message "[$($config.vsanwitness.ip)] Switching Witness to use vLCM Image: SUCCESSFUL"
+Function Start-ConfigureMultiNodevSAN {
+    Param (
+        [Parameter (Mandatory = $true)] [Object]$jsonPath
+    )
 
-    #$build = Get-VMHost -Name $config.vsanwitness.ip | Select-Object Build
-    #$desiredBuild = Get-LCMImage -Type 'BaseImage' | Where-Object { $_.Version -Like "*$($build.Build)" }    
-    #$desiredImage = Get-LCMImage -Version $desiredBuild.Version -Type BaseImage
-    #Get-VMHost -Name $config.vsanwitness.ip | Set-VMHost -BaseImage $desiredImage
+    $config = Get-deploymentConfig -jsonPath $jsonPath
+    
+    if ($config.vcenter.mgmt.fqdn) {
+        $vcenter = $config.vcenter.mgmt.fqdn
+    } else {
+        $vcenter = $config.vcenter.mgmt.ip
+    }
+    Connect-VIServer -server $vcenter -user administrator@vsphere.local -pass $config.vcenter.sso_administrator_password -ErrorAction SilentlyContinue | Out-Null
+
+    $cluster = Get-Cluster -Name $config.vcenter.cluster
+    if ($cluster.ExtensionData.HciConfig.WorkflowState -eq "in_progress")
+    {
+        LogMessage -type INFO -message "[$($config.vcenter.cluster)] Disabling Quickstart"
+        $Cluster.ExtensionData.AbandonHciWorkflow()
+    }
+
+    foreach ($esxihost in $config.hosts) {
+        if ($esxihost.mgmt.fqdn) {
+            $esxi = $esxihost.mgmt.fqdn
+        } else {
+            $esxi = $esxihost.mgmt.ip
+        }
+        LogMessage -type INFO -message "[$($esxi)] Gathering list of disks to be used by vSAN"
+        $disks = Get-vSANCompatibleDrives -esxihost $esxi -password $esxihost.password
+        foreach ($disk in $disks) {
+            Add-VsanStoragePoolDisk -VMHost (Get-VMHost $esxi) -VsanStoragePoolDiskType "singleTier" -DiskCanonicalName $disk.Device | Out-Null
+            LogMessage -type INFO -message "[$($esxi)] Added disk $($disk.Device)"
+        }
+    } 
+
+    LogMessage -type INFO -message "[$($config.vcenter.vm_name)] Re-Applying vSAN Default Storage Policy"
+    forEach($_ in (Get-VM -Name $config.vcenter.vm_name)){
+        Set-SpbmEntityConfiguration -Configuration (Get-SpbmEntityConfiguration $_) -StoragePolicy "vSAN Default Storage Policy"
+        Set-SpbmEntityConfiguration -Configuration (Get-SpbmEntityConfiguration (get-vm $_ | Get-HardDisk)) -StoragePolicy "vSAN Default Storage Policy"
+    }
+
+    LogMessage -type NOTE -message "vSAN configuration: COMPLETED"
+    Disconnect-VIServer -server $vcenter -Confirm:$false
 }

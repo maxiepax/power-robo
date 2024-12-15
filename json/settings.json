@@ -6,7 +6,7 @@
                 "password": "VMw@re1!",
                 "mgmt": {
                     "ip": "10.11.11.101",
-                    "fqdn": "sfo01-m01-r01-esx01.sfo.rainpole.io"
+                    "fqdn": "esx01.sfo.rainpole.io"
                 },
                 "vmotion": {
                     "ip": "10.11.12.101",
@@ -27,7 +27,7 @@
                 "password": "VMw@re1!",
                 "mgmt": {
                     "ip": "10.11.11.102",
-                    "fqdn": "sfo01-m01-r01-esx02.sfo.rainpole.io"
+                    "fqdn": "esx02.sfo.rainpole.io"
                 },
                 "vmotion": {
                     "ip": "10.11.12.102",
@@ -37,6 +37,27 @@
                 },
                 "vsan": {
                     "ip": "10.11.13.102",
+                    "netmask": "255.255.255.0",
+                    "gw": "10.11.13.1",
+                    "mtu": 8900
+                }
+            },
+            {
+                "name": "esxi03",
+                "user": "root",
+                "password": "VMw@re1!",
+                "mgmt": {
+                    "ip": "10.11.11.103",
+                    "fqdn": "esx03.sfo.rainpole.io"
+                },
+                "vmotion": {
+                    "ip": "10.11.12.103",
+                    "netmask": "255.255.255.0",
+                    "gw": "10.11.12.1",
+                    "mtu": 1500
+                },
+                "vsan": {
+                    "ip": "10.11.13.103",
                     "netmask": "255.255.255.0",
                     "gw": "10.11.13.1",
                     "mtu": 8900
@@ -86,7 +107,7 @@
         },
         "deployment_size": "tiny",
         "ceip": false,
-        "hcl_json": "custom_vsan_esa_hcl_12_04_2024_11_17_55.json"
+        "hcl_json": "all.json"
     },
     "witnesstarget": {
         "mgmt": {
@@ -99,7 +120,7 @@
         },
         "common":  {
             "ip": "10.13.11.103",
-            "fqdn":"sfo01-w01-r01-esx03.sfo.rainpole.io",
+            "fqdn":"witnesshost.sfo.rainpole.io",
             "datastore": "datastore01",
             "portgroup_name": "VM Network",
             "portgroup_vlan": "1311",
