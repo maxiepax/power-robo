@@ -28,3 +28,10 @@ ESXi has to be installed, management vmkernel has to be configured with a valid 
 
 ## network requirements
 The Switches need to be configured with the networks Management, VMotion, and vSAN. These should all have a highly available gateway (VRRP/HSRP). The password for the ESXi hosts needs to be known.
+
+## Usage
+Pull the github repo to a folder. <br/>
+Place the VCSA .iso, and vSAN ESA Witness .ova in the /binaries folder. <br/>
+In the /json folder, modify the settings.json to your liking. You can choose to not use dns/fqdn, or use fqdn. <br/>
+run the cmd: start-powerRoboMenu -jsonPath .\json\ -binaryPath .\binaries\ -logFile .\logs\robo.log <br/>
+Step through the menu items ensuring that they complete successfully.
