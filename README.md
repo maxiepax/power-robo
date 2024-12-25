@@ -8,12 +8,13 @@ Choose between two options, 2-node with witness, or multi node deployment.
 ### 2-node with witness
 This option requires you to have two ESXi nodes backed by a Switch fabric that provides Management, VMotion, and vSAN VLANs.
 Along with either a 3rd ESXi host that can host the Witness VM, or a remote vCenter with cluster that could house multiple Witness VMs.
-<img width="613" alt="image" src="https://github.com/user-attachments/assets/bf610848-9899-43b0-9ac7-073880a82709">
+<img width="803" alt="image" src="https://github.com/user-attachments/assets/c81c03fe-9716-47dc-9ddf-a238fe3ccceb" />
+
 
 ### 3+ nodes without witness (not ready yet)
 This option does not require a witness but still handles the generation of files, and deployment of vcenter, and automation of configuring the cluster.
 
-<img width="610" alt="image" src="https://github.com/user-attachments/assets/4dcd3f28-1b08-43c1-b05b-990b8d0aa8a1">
+<img width="562" alt="image" src="https://github.com/user-attachments/assets/c9dad6af-745b-4169-bb1f-6410f00fe421" />
 
 
 ## pre-requirements
